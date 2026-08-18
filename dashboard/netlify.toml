@@ -1,0 +1,6 @@
+# Netlify static site config
+# Deploy the "dashboard" folder (this directory) as a static site.
+
+[build]
+  publish = "."
+  command = ""

@@ -1,0 +1,8 @@
+# The scanner uses only the Python standard library (no third-party packages),
+# so there are no dependencies to install.
+#
+# If you later add features that need libraries (e.g. pandas, websockets),
+# list them here and uncomment the install step in .github/workflows/scan.yml:
+#
+#   - name: Install deps
+#     run: pip install -r requirements.txt

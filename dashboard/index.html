@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMC Signal Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<header>
+  <div class="wrap header-inner">
+    <div>
+      <h1>◉ SMC Signal Dashboard</h1>
+      <p class="sub">Smart Money Concepts + Liquidity confluence · setups with ≥20 pips & quality ≥70</p>
+    </div>
+    <div class="header-actions">
+      <span id="mode-badge" class="badge badge-demo">DEMO DATA</span>
+      <button id="connect-btn" class="btn">Connect Supabase</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="stats" class="stats"></section>
+
+  <section class="controls">
+    <label>Pair
+      <select id="filter-pair"><option value="">All</option></select>
+    </label>
+    <label>Side
+      <select id="filter-side">
+        <option value="">All</option>
+        <option value="LONG">LONG</option>
+        <option value="SHORT">SHORT</option>
+      </select>
+    </label>
+    <label>Min score
+      <select id="filter-score">
+        <option value="0">All</option>
+        <option value="70">≥ 70</option>
+        <option value="80">≥ 80</option>
+        <option value="90">≥ 90</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="filter-open"> open only</label>
+    <span id="count" class="count"></span>
+  </section>
+
+  <section id="featured" class="featured"></section>
+
+  <section class="table-wrap">
+    <table id="table">
+      <thead>
+        <tr>
+          <th>Time</th><th>Pair</th><th>Side</th><th>Quality</th>
+          <th>Entry</th><th>SL</th><th>TP</th><th>Potential</th>
+          <th>R:R</th><th>Bias</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="empty" class="empty hidden">No signals match the current filters.</p>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <span id="foot-note">Demo mode — connect Supabase to go live.</span>
+</footer>
+
+<!-- Connect modal -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Connect Supabase</h2>
+    <p class="sub">Paste your project URL and <b>anon / public</b> key (never the service-role key). Stored only in your browser's localStorage.</p>
+    <label>Project URL
+      <input id="supa-url" placeholder="https://YOUR-PROJECT.supabase.co">
+    </label>
+    <label>Anon key
+      <input id="supa-key" placeholder="eyJhbGciOiJIUzI1NiIs...">
+    </label>
+    <div class="modal-actions">
+      <button id="connect-save" class="btn btn-primary">Connect</button>
+      <button id="connect-cancel" class="btn">Cancel</button>
+    </div>
+    <p id="connect-err" class="err hidden"></p>
+  </div>
+</div>
+</body>
+</html>
