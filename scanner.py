@@ -3,8 +3,12 @@
 SMC + Liquidity confluence scanner  (forex / gold)
 
 Finds tradeable setups that pass BOTH filters:
-  1. pip potential to the next liquidity pool >= MIN_PIPS  (default 20)
-  2. SMC confluence quality score >= MIN_SCORE            (default 70)
+  1. pip potential to the next liquidity pool >= MIN_PIPS          (default 20)
+  2. SMC confluence quality score in [MIN_SCORE, MAX_SCORE)        (default 70–89)
+
+The 70–89 band + a 4-pair universe (EURUSD, AUDUSD, XAUUSD, USDJPY) is a
+data-driven choice: a 60-day backtest showed this slice wins ~35% at R:R≥1.5
+for ≈ +0.40R/trade, while the 90+ "chase zone" and the noisy crosses lose.
 
 SMC concepts implemented
 ------------------------
@@ -55,8 +59,9 @@ INSTRUMENTS = {
     "XAUUSD": ("GC=F", 1.0),   # gold: 1 "point" = $1
 }
 
-DEFAULT_PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD",
-                 "GBPJPY", "EURJPY", "AUDJPY", "XAUUSD"]
+# Default universe — the 4 pairs that showed a real edge in the 60-day backtest
+# (score 70–89 on these = +0.40R/trade). Override with --pairs to scan more.
+DEFAULT_PAIRS = ["EURUSD", "AUDUSD", "XAUUSD", "USDJPY"]
 
 UA = {"User-Agent": "Mozilla/5.0"}
 
@@ -596,14 +601,68 @@ def resend_telegram(cfg):
             print(f"   [resend] clear error: {e}")
 
 
+def recently_signaled(cfg, pair, side, hours):
+    """True if a signal for the same pair+side was recorded within the last
+    `hours` (used as a Telegram cooldown, so a persistent setup doesn't ping
+    you every scan). Falls back to no-op when Supabase isn't configured."""
+    url = cfg.get("supabase_url")
+    key = cfg.get("supabase_key")
+    if not url or not key or not hours:
+        return False
+    base = url.rstrip("/") + "/rest/v1"
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours))
+    since_iso = since.isoformat().replace("+00:00", "Z")
+    q = (f"{base}/signals?pair=eq.{urllib.parse.quote(pair)}"
+         f"&side=eq.{side}&created_at=gte.{since_iso}&select=id&limit=1")
+    req = urllib.request.Request(q, headers={"apikey": key, "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            rows = json.loads(r.read())
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def in_session(cfg):
+    """True when 'now' is inside the active trading-hours window (default
+    London+NY: 03:00–17:00 America/Toronto). Outside it, the tape is mostly
+    Asian chop / late-NY drift — the backtest showed filtering to these hours
+    roughly doubles expectancy."""
+    if not cfg.get("session_filter"):
+        return True
+    start = cfg.get("session_start")
+    end = cfg.get("session_end")
+    if not start or not end:
+        return True
+    try:
+        tz = ZoneInfo(cfg.get("session_tz", "America/Toronto"))
+    except Exception:
+        return True
+    try:
+        sh, sm = (int(x) for x in start.split(":"))
+        eh, em = (int(x) for x in end.split(":"))
+    except Exception:
+        return True
+    now = dt.datetime.now(tz)
+    s = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    e = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if e <= s:
+        return now >= s or now < e
+    return s <= now < e
+
+
 def run(cfg, seen):
     if in_blackout(cfg):
         print(f"   [blackout] {cfg['blackout_start']}–{cfg['blackout_end']} "
               f"{cfg.get('blackout_tz', '')} — skipping scan (high-spread window)")
         return 0
+    if not in_session(cfg):
+        print(f"   [session] outside {cfg.get('session_start')}–{cfg.get('session_end')} "
+              f"{cfg.get('session_tz', '')} — skipping (off-hours chop)")
+        return 0
     now = dt.datetime.now()
     print(f"\n=== SMC scan {now.strftime('%Y-%m-%d %H:%M:%S %Z')} "
-          f"(min {cfg['min_pips']} pips, score >= {cfg['min_score']}) ===")
+          f"(min {cfg['min_pips']} pips, score {cfg['min_score']}-{cfg['max_score']}) ===")
     close_out_signals(cfg)
     resend_telegram(cfg)
     found = 0
@@ -622,14 +681,31 @@ def run(cfg, seen):
         sig = f"{pair}{s['side']}{round(s['sl'], 5)}{round(s['tp'], 5)}"
         if sig in seen:
             continue
+        # score ceiling: the 90+ bucket is a "chase" zone that lost money in
+        # backtesting — drop it (default max_score=89).
+        if s["score"] >= cfg["max_score"]:
+            if cfg["verbose"]:
+                print(f"   ~ {pair} {s['side']} score {s['score']} (>= max {cfg['max_score']}, "
+                      f"chase zone — skipped)")
+            continue
+        # bias alignment: only trade WITH the 1H trend (backtest: +0.19R -> +0.41R)
+        if cfg["require_bias"]:
+            aligned = ((s["side"] == "LONG" and s["bias"] == "bull")
+                       or (s["side"] == "SHORT" and s["bias"] == "bear"))
+            if not aligned:
+                if cfg["verbose"]:
+                    print(f"   ~ {pair} {s['side']} skipped (bias {s['bias']} disagrees)")
+                continue
         if s["score"] >= cfg["min_score"]:
             seen.add(sig)
+            # Telegram cooldown: only ping if this pair+side hasn't been alerted
+            # recently (recording still happens — every signal feeds the report).
+            fresh = not recently_signaled(cfg, s["pair"], s["side"], cfg["telegram_cooldown_hours"])
             print_signal(s, cfg)
             res = push_supabase(s, cfg)
             if res not in ("ok", "skip"):
                 print(f"   [supabase: {res}]")
-            # Alert only on a *new* insert ("ok") so re-scans don't spam you.
-            if res in ("ok", "skip"):
+            if res in ("ok", "skip") and fresh:
                 t = send_telegram(telegram_text(s), cfg)
                 if t not in ("ok", "skip"):
                     print(f"   [telegram: {t}]")
@@ -647,6 +723,10 @@ def main():
     ap.add_argument("--pairs", nargs="*", default=DEFAULT_PAIRS)
     ap.add_argument("--min-pips", type=float, default=20.0)
     ap.add_argument("--min-score", type=int, default=70)
+    ap.add_argument("--max-score", type=int, default=89,
+                    help="Score ceiling — drop signals at/above this (90+ = chase zone). Default 89.")
+    ap.add_argument("--telegram-cooldown-hours", type=float, default=1.0,
+                    help="Min hours between Telegram pings for the same pair+side. Default 1.")
     ap.add_argument("--rr-min", type=float, default=1.5)
     ap.add_argument("--eq-pips", type=float, default=3.0)
     ap.add_argument("--sl-buffer", type=float, default=1.0)
@@ -670,10 +750,21 @@ def main():
                     help="IANA timezone for the blackout window")
     ap.add_argument("--no-blackout", action="store_true",
                     help="Disable the blackout window")
+    ap.add_argument("--no-bias-filter", action="store_true",
+                    help="Allow counter-trend signals (default: trade WITH the 1H trend)")
+    ap.add_argument("--session-start", default="03:00",
+                    help="Active-hours start HH:MM (default 03:00 = London open ET)")
+    ap.add_argument("--session-end", default="17:00",
+                    help="Active-hours end HH:MM (default 17:00 = NY close ET)")
+    ap.add_argument("--session-tz", default="America/Toronto",
+                    help="IANA timezone for active-hours window")
+    ap.add_argument("--no-session-filter", action="store_true",
+                    help="Disable the active-hours filter (scan 24/5)")
     args = ap.parse_args()
 
     cfg = {
         "pairs": args.pairs, "min_pips": args.min_pips, "min_score": args.min_score,
+        "max_score": args.max_score, "telegram_cooldown_hours": args.telegram_cooldown_hours,
         "rr_min": args.rr_min, "eq_pips": args.eq_pips, "sl_buffer": args.sl_buffer,
         "min_sl_pips": args.min_sl_pips,
         "swing_n": args.swing_n, "sweep_lookback": args.sweep_lookback,
@@ -686,6 +777,11 @@ def main():
         "blackout_start": args.blackout_start,
         "blackout_end": args.blackout_end,
         "blackout_tz": args.blackout_tz,
+        "require_bias": not args.no_bias_filter,
+        "session_filter": not args.no_session_filter,
+        "session_start": args.session_start,
+        "session_end": args.session_end,
+        "session_tz": args.session_tz,
     }
     if args.telegram_test:
         telegram_test(cfg)

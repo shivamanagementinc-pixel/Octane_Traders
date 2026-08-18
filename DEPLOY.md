@@ -119,39 +119,50 @@ posts new ones (Supabase Realtime).
 
 1. GitHub Actions runs the scanner automatically every 30 min — do nothing.
 2. Dashboard (phone or desktop) shows ★ setups as they appear, live.
-3. Mark outcomes (hit TP / SL / expired) in the Supabase table editor
-   (`status` column) to build a win-rate over time.
+3. The scanner **auto-marks outcomes** (TP/SL) — you never touch it.
 
 ## 5. Telegram alerts (optional but recommended)
 
 1. In Telegram, open **@BotFather** → `/newbot` → name it (e.g. "My SMC Alerts")
    → copy the **bot token** it gives you.
 2. Open a chat with your new bot, send any message (e.g. "hi").
-3. Get your **chat id**: open **@userinfobot** and send `/start` — it replies with
-   your `Id` (a number like `123456789`).
-4. Add two more GitHub repo secrets (Settings → Secrets → Actions):
+3. Get your **chat id**: in your browser open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` and read the `"chat":{"id":...}`
+   (or use **@userinfobot** → `/start` → it replies with your `Id`).
+4. Add two GitHub repo secrets (Settings → Secrets → Actions):
    - `TELEGRAM_BOT_TOKEN` = the token from BotFather
-   - `TELEGRAM_CHAT_ID` = the id from userinfobot
-5. Re-run the workflow. You'll now get a message the moment a new ★ setup is
-   posted, plus a "TP hit / SL hit" message when the scanner auto-closes one.
+   - `TELEGRAM_CHAT_ID` = the id from step 3
+5. **Test it:** Actions tab → **"Telegram Test"** → Run workflow. You should get
+   a test message within ~30 seconds. If not, see the troubleshooting table below.
+
+You'll get a message the moment a new ★ setup is posted, plus a "TP hit / SL
+hit" message when the scanner auto-closes one.
+
+### Telegram troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| Test run passes but no message | Chat id wrong — use the `getUpdates` method, or check for a leading `-` for group chats |
+| Log shows `[telegram: err 401]` | Bot token wrong / truncated |
+| Log shows `[telegram: err 403]` | Bot blocked, or chat id belongs to someone else |
+| Log shows `[telegram: skip]` | Secrets not reaching the job — make sure they're **Repository secrets** and the workflow was re-uploaded |
+| No signal messages at all | Scanner only alerts on **new** signals — a signal found before Telegram was configured won't re-alert (use the 📤 resend button) |
 
 > **Email instead of Telegram?** Telegram is recommended (free, instant, no SMTP
 > setup). If you really want email, say the word and I'll add an SMTP path with
 > four more secrets (host/port/user/password).
 
-## 6. Performance report (win-rate tracking)
+## 6. Performance report (automatic, no manual marking)
 
-The scanner now **auto-tracks outcomes**: on every run it fetches your open
-signals, checks the latest price, and marks `hit_tp` / `hit_sl` automatically
-(up to the cron interval of lag).
+The scanner **auto-tracks outcomes**: on every run it fetches your open signals,
+checks the latest price, and marks `hit_tp` / `hit_sl` automatically (up to the
+cron interval of lag). `status` is read-only for the dashboard — no manual
+marking, so the numbers stay honest.
 
-**One extra Supabase step to enable manual marking from the dashboard:**
+**One extra Supabase step (enables the 📤 resend button + locks `status`):**
 
 1. Supabase → SQL Editor → New query
-2. Paste `supabase/schema_update_outcomes.sql` → Run
-
-This lets you also click **TP / SL / ✕** on any open signal in the dashboard,
-and it blocks any edit to the signal data itself (only `status` can change).
+2. Paste `supabase/schema_update_v2.sql` → Run
 
 The dashboard then shows a **Performance Report**:
 win rate, expectancy (R per trade), profit factor, total P&L in R, per-pair and
@@ -159,6 +170,39 @@ per-quality-score breakdowns, plus an **Export CSV** button.
 
 > R = risk units. A winning 3:1 trade is +3R; any loss is −1R. Expectancy =
 > average R per closed trade. Profit factor = gross wins ÷ gross losses.
+
+### 📤 Re-send a trade to Telegram
+
+Each row has a 📤 button. Clicking it sets a `resend` flag; the next scanner run
+picks it up and re-sends the message to Telegram (lag ≤ the cron interval — or
+instantly if you click **Run workflow** on the SMC Scan action).
+
+### ⏱️ Blackout window (5:00–6:30pm local — high-spread rollover)
+
+The scanner **skips everything** between 17:00–18:30 (America/Toronto by
+default): no new signals recorded, no Telegram alerts, no TP/SL marking. This
+keeps the fake wicks from the spread spike out of your data and performance.
+
+- Change it in `scan.yml` or CLI: `--blackout-start 17:00 --blackout-end 18:30 --blackout-tz America/Toronto`
+- Disable entirely: `--no-blackout`
+- The timezone auto-handles DST (EST/EDT).
+
+### 🕐 Session filter (active hours only — backtest-proven)
+
+The scanner only records signals during **03:00–17:00 ET** (London open → NY
+close) by default. Off-hours (Asian chop, late-NY drift) are skipped. This
+filter roughly **doubles expectancy** in backtesting.
+
+- Adjust: `--session-start HH:MM --session-end HH:MM --session-tz IANA`
+- Disable: `--no-session-filter`
+
+### 📈 Bias alignment (trade WITH the trend — backtest-proven)
+
+Counter-trend signals are **dropped by default**: the trade must agree with the
+1H trend (bull bias for longs, bear for shorts). This doubled expectancy in
+backtesting.
+
+- Disable (allow counter-trend): `--no-bias-filter`
 
 ## 7. How often does it refresh?
 
@@ -182,13 +226,14 @@ per-quality-score breakdowns, plus an **Export CSV** button.
 
 | Path | What |
 |---|---|
-| `scanner.py` | SMC engine + Supabase push + auto close-out + Telegram |
+| `scanner.py` | SMC engine + Supabase push + auto close-out + blackout + Telegram |
 | `.github/workflows/scan.yml` | Scheduled Actions run |
+| `.github/workflows/telegram-test.yml` | One-click Telegram test message |
 | `requirements.txt` | (stdlib only — nothing to install) |
 | `.gitignore` | Keeps secrets out of git |
 | `supabase/schema.sql` | Table, indexes, RLS, realtime, stats view |
-| `supabase/schema_update_outcomes.sql` | Allow dashboard to mark TP/SL (status only) |
+| `supabase/schema_update_v2.sql` | `resend` flag + locks `status` (auto-tracking only) |
 | `dashboard/index.html` | Dashboard UI |
 | `dashboard/styles.css` | Styling |
-| `dashboard/app.js` | Data loading + performance report + outcome marking |
+| `dashboard/app.js` | Data loading + performance report + resend button |
 | `dashboard/netlify.toml` | Netlify static-site config |
