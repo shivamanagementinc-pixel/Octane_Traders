@@ -79,6 +79,11 @@ The quality score is the sum of weighted SMC confluences (max 100):
 | `--sl-buffer` | 1 | extra pips beyond structure for the stop |
 | `--sweep-lookback` | 8 | bars to look back for a recent sweep |
 | `--swing-n` | 2 | swing detection lookback |
+| `--blackout-start` | 17:00 | daily no-trade window start (HH:MM) |
+| `--blackout-end` | 18:30 | daily no-trade window end (HH:MM) |
+| `--blackout-tz` | America/Toronto | timezone for the window (DST-aware) |
+| `--no-blackout` | off | disable the blackout window |
+| `--telegram-test` | off | send a Telegram test message and exit |
 
 ## Known limitations (be honest about these)
 

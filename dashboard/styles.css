@@ -110,13 +110,11 @@ table.mini tr:last-child td { border-bottom: none; }
 .c-win { color: var(--green); font-weight: 700; }
 .c-loss { color: var(--red); font-weight: 700; }
 
-/* outcome buttons */
+/* outcome buttons (resend only) */
 .marks { display: inline-flex; gap: 5px; }
-.m { font-size: 11px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 4px 7px; cursor: pointer; line-height: 1; }
+.m { font-size: 12px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 4px 7px; cursor: pointer; line-height: 1; margin-left: 6px; vertical-align: middle; }
 .m:hover { filter: brightness(1.2); }
-.m-tp:hover { border-color: var(--green); color: var(--green); }
-.m-sl:hover { border-color: var(--red); color: var(--red); }
-.m-ex:hover { border-color: var(--muted); }
+.m-send:hover { border-color: var(--blue); color: var(--blue); }
 
 @media (max-width: 720px) {
   .perf-grid { grid-template-columns: 1fr; }

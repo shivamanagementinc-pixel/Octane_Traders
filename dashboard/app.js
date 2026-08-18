@@ -186,9 +186,8 @@ function render() {
       <td class="num">+${s.pips_tp}${s.pair === "XAUUSD" ? "$" : "p"}</td>
       <td class="num">${s.rr}</td>
       <td class="muted">${s.htf_bias || "—"}</td>
-      <td>${s.status === "open"
-        ? `<div class="marks"><button class="m m-tp" data-id="${s.id}" data-st="hit_tp">TP</button><button class="m m-sl" data-id="${s.id}" data-st="hit_sl">SL</button><button class="m m-ex" data-id="${s.id}" data-st="expired">✕</button></div>`
-        : `<span class="st ${statusClass(s.status)}">${s.status.replace("_", " ")}</span>`}</td>
+      <td><span class="st ${statusClass(s.status)}">${s.status.replace("_", " ")}</span>
+          <button class="m m-send" data-id="${s.id}" title="Re-send to Telegram">📤</button></td>
     </tr>`).join("");
   $("empty").classList.toggle("hidden", sigs.length > 0);
 
@@ -196,18 +195,19 @@ function render() {
 }
 
 /* -------------------------------------------------------------- outcomes */
-async function markOutcome(id, status) {
+/* Manual TP/SL marking removed — outcomes are set ONLY by the scanner's
+   automatic close-out (status is read-only for the browser). */
+async function resendSignal(id) {
   const s = state.signals.find((x) => String(x.id) === String(id));
   if (!s) return;
   if (state.mode === "demo" || !state.client) {
-    s.status = status;
-    render();
+    alert("Demo mode — connect Supabase to resend.");
     return;
   }
-  const { error } = await state.client.from("signals").update({ status }).eq("id", id);
-  if (error) { alert("Update failed: " + error.message); return; }
-  s.status = status;
-  render();
+  const { error } = await state.client.from("signals").update({ resend: true }).eq("id", id);
+  if (error) { alert("Resend failed: " + error.message); return; }
+  const b = document.querySelector(`.m-send[data-id="${id}"]`);
+  if (b) { b.textContent = "✓"; setTimeout(() => (b.textContent = "📤"), 2000); }
 }
 
 function exportCSV() {
@@ -304,9 +304,9 @@ function bind() {
     $(id).addEventListener("change", render));
   $("csv-btn").addEventListener("click", exportCSV);
   document.querySelector("#table tbody").addEventListener("click", (e) => {
-    const b = e.target.closest(".m");
+    const b = e.target.closest(".m-send");
     if (!b) return;
-    markOutcome(b.dataset.id, b.dataset.st);
+    resendSignal(b.dataset.id);
   });
 }
 

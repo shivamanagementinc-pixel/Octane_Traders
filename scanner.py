@@ -34,6 +34,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 # --------------------------------------------------------------------------- #
 # Instrument config: yahoo symbol -> pip/point size
@@ -514,11 +515,97 @@ def close_out_signals(cfg):
         print(f"   [close-out] {changed} open signal(s) resolved")
 
 
+def in_blackout(cfg):
+    """True during the daily high-spread window (e.g. the 5pm–6:30pm rollover).
+    Signals inside it are treated as noise: not recorded, not alerted, and no
+    close-out marking happens (so fake TP/SL wicks can't corrupt results)."""
+    if not cfg.get("blackout"):
+        return False
+    start = cfg.get("blackout_start")
+    end = cfg.get("blackout_end")
+    if not start or not end:
+        return False
+    try:
+        tz = ZoneInfo(cfg.get("blackout_tz", "America/Toronto"))
+    except Exception:
+        return False
+    try:
+        sh, sm = (int(x) for x in start.split(":"))
+        eh, em = (int(x) for x in end.split(":"))
+    except Exception:
+        return False
+    now = dt.datetime.now(tz)
+    s = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    e = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if e <= s:                     # window crosses midnight
+        return now >= s or now < e
+    return s <= now < e
+
+
+def telegram_test(cfg):
+    """Send a one-off test message (used by the Telegram Test workflow)."""
+    token = cfg.get("telegram_token")
+    chat = cfg.get("telegram_chat_id")
+    if not token or not chat:
+        print("   telegram not configured (missing TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
+        return
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    r = send_telegram(f"\u2705 SMC scanner online — test message {stamp}", cfg)
+    print(f"   telegram test -> {r}")
+
+
+def resend_telegram(cfg):
+    """Honour dashboard 'resend' requests: rows with resend=true are re-sent to
+    Telegram and the flag is cleared. Runs on each scan (so lag ≤ cron interval,
+    or instantly if you trigger the workflow manually)."""
+    url = cfg.get("supabase_url")
+    key = cfg.get("supabase_key")
+    if not url or not key:
+        return
+    base = url.rstrip("/") + "/rest/v1"
+    req = urllib.request.Request(
+        f"{base}/signals?resend=eq.true&select=*",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            rows = json.loads(r.read())
+    except Exception as e:
+        print(f"   [resend] fetch error: {e}")
+        return
+    for row in rows:
+        sig = {
+            "pair": row["pair"], "side": row["side"], "score": row["score"],
+            "price": float(row["price"]), "sl": float(row["sl"]),
+            "tp": float(row["tp"]), "pips_tp": float(row["pips_tp"]),
+            "rr": float(row["rr"]), "bias": row.get("htf_bias"),
+            "flow": "up" if row["side"] == "LONG" else "down",
+            "reasons": row.get("reasons") or [],
+        }
+        t = send_telegram(telegram_text(sig), cfg)
+        print(f"   [resend] {row['pair']} {row['side']} -> telegram {t}")
+        patch = urllib.request.Request(
+            f"{base}/signals?id=eq.{row['id']}",
+            data=json.dumps({"resend": False}).encode(),
+            method="PATCH",
+            headers={"apikey": key, "Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json", "Prefer": "return=minimal"})
+        try:
+            with urllib.request.urlopen(patch, timeout=15):
+                pass
+        except Exception as e:
+            print(f"   [resend] clear error: {e}")
+
+
 def run(cfg, seen):
+    if in_blackout(cfg):
+        print(f"   [blackout] {cfg['blackout_start']}–{cfg['blackout_end']} "
+              f"{cfg.get('blackout_tz', '')} — skipping scan (high-spread window)")
+        return 0
     now = dt.datetime.now()
     print(f"\n=== SMC scan {now.strftime('%Y-%m-%d %H:%M:%S %Z')} "
           f"(min {cfg['min_pips']} pips, score >= {cfg['min_score']}) ===")
     close_out_signals(cfg)
+    resend_telegram(cfg)
     found = 0
     for pair in cfg["pairs"]:
         sym, pip = INSTRUMENTS[pair]
@@ -573,6 +660,16 @@ def main():
     ap.add_argument("--supabase-key", default=None, help="Supabase service-role key")
     ap.add_argument("--telegram-token", default=None, help="Telegram bot token")
     ap.add_argument("--telegram-chat-id", default=None, help="Telegram chat id")
+    ap.add_argument("--telegram-test", action="store_true",
+                    help="Send a Telegram test message and exit")
+    ap.add_argument("--blackout-start", default="17:00",
+                    help="Daily blackout start HH:MM (default 17:00)")
+    ap.add_argument("--blackout-end", default="18:30",
+                    help="Daily blackout end HH:MM (default 18:30)")
+    ap.add_argument("--blackout-tz", default="America/Toronto",
+                    help="IANA timezone for the blackout window")
+    ap.add_argument("--no-blackout", action="store_true",
+                    help="Disable the blackout window")
     args = ap.parse_args()
 
     cfg = {
@@ -585,7 +682,14 @@ def main():
         "supabase_key": args.supabase_key or os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
         "telegram_token": args.telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN"),
         "telegram_chat_id": args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID"),
+        "blackout": not args.no_blackout,
+        "blackout_start": args.blackout_start,
+        "blackout_end": args.blackout_end,
+        "blackout_tz": args.blackout_tz,
     }
+    if args.telegram_test:
+        telegram_test(cfg)
+        return
     seen = set()
     for i in range(args.repeat):
         if i > 0:
