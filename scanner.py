@@ -764,8 +764,6 @@ def main():
                     help="Send a Telegram test message and exit")
     ap.add_argument("--telegram-demo", action="store_true",
                     help="Send a realistic DEMO signal to Telegram and exit")
-    ap.add_argument("--telegram-demo", action="store_true",
-                    help="Send a realistic DEMO signal to Telegram and exit")
     ap.add_argument("--blackout-start", default="17:00",
                     help="Daily blackout start HH:MM (default 17:00)")
     ap.add_argument("--blackout-end", default="18:30",
