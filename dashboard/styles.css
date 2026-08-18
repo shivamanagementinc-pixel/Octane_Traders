@@ -93,6 +93,35 @@ tbody tr:last-child td { border-bottom: none; }
 .empty { text-align: center; color: var(--muted); padding: 24px; }
 .foot { color: var(--muted); font-size: 12px; padding-bottom: 24px; }
 
+/* performance report */
+.perf-wrap { margin-bottom: 20px; }
+.perf-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
+.perf-head h2 { margin: 0; font-size: 16px; }
+.perf-wrap .stats { margin: 0 0 14px; }
+.perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.perf-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.perf-box h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.note { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.note b { color: var(--text); }
+table.mini { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.mini th { text-align: left; padding: 6px 8px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--line); }
+table.mini td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+table.mini tr:last-child td { border-bottom: none; }
+.c-win { color: var(--green); font-weight: 700; }
+.c-loss { color: var(--red); font-weight: 700; }
+
+/* outcome buttons */
+.marks { display: inline-flex; gap: 5px; }
+.m { font-size: 11px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 4px 7px; cursor: pointer; line-height: 1; }
+.m:hover { filter: brightness(1.2); }
+.m-tp:hover { border-color: var(--green); color: var(--green); }
+.m-sl:hover { border-color: var(--red); color: var(--red); }
+.m-ex:hover { border-color: var(--muted); }
+
+@media (max-width: 720px) {
+  .perf-grid { grid-template-columns: 1fr; }
+}
+
 /* modal */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 20px; }
 .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; width: 100%; max-width: 440px; }

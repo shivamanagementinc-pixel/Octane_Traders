@@ -65,12 +65,14 @@ smc-signal-scanner/            ← repo root
 ### 2b. Add your secrets (this is what connects the repo to Supabase)
 
 1. Repo → **Settings → Secrets and variables → Actions → New repository secret**
-2. Add **two** secrets:
+2. Add **four** secrets (the Telegram two are optional but recommended):
 
 | Secret name | Value |
 |---|---|
 | `SUPABASE_URL` | `https://xyz.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | the **service_role** key (Step 1) |
+| `SUPABASE_SERVICE_ROLE_KEY` | the **service_role / secret** key (Step 1) |
+| `TELEGRAM_BOT_TOKEN` | from @BotFather (optional — see Telegram section) |
+| `TELEGRAM_CHAT_ID` | your chat id (optional) |
 
 ### 2c. Turn it on
 
@@ -120,6 +122,52 @@ posts new ones (Supabase Realtime).
 3. Mark outcomes (hit TP / SL / expired) in the Supabase table editor
    (`status` column) to build a win-rate over time.
 
+## 5. Telegram alerts (optional but recommended)
+
+1. In Telegram, open **@BotFather** → `/newbot` → name it (e.g. "My SMC Alerts")
+   → copy the **bot token** it gives you.
+2. Open a chat with your new bot, send any message (e.g. "hi").
+3. Get your **chat id**: open **@userinfobot** and send `/start` — it replies with
+   your `Id` (a number like `123456789`).
+4. Add two more GitHub repo secrets (Settings → Secrets → Actions):
+   - `TELEGRAM_BOT_TOKEN` = the token from BotFather
+   - `TELEGRAM_CHAT_ID` = the id from userinfobot
+5. Re-run the workflow. You'll now get a message the moment a new ★ setup is
+   posted, plus a "TP hit / SL hit" message when the scanner auto-closes one.
+
+> **Email instead of Telegram?** Telegram is recommended (free, instant, no SMTP
+> setup). If you really want email, say the word and I'll add an SMTP path with
+> four more secrets (host/port/user/password).
+
+## 6. Performance report (win-rate tracking)
+
+The scanner now **auto-tracks outcomes**: on every run it fetches your open
+signals, checks the latest price, and marks `hit_tp` / `hit_sl` automatically
+(up to the cron interval of lag).
+
+**One extra Supabase step to enable manual marking from the dashboard:**
+
+1. Supabase → SQL Editor → New query
+2. Paste `supabase/schema_update_outcomes.sql` → Run
+
+This lets you also click **TP / SL / ✕** on any open signal in the dashboard,
+and it blocks any edit to the signal data itself (only `status` can change).
+
+The dashboard then shows a **Performance Report**:
+win rate, expectancy (R per trade), profit factor, total P&L in R, per-pair and
+per-quality-score breakdowns, plus an **Export CSV** button.
+
+> R = risk units. A winning 3:1 trade is +3R; any loss is −1R. Expectancy =
+> average R per closed trade. Profit factor = gross wins ÷ gross losses.
+
+## 7. How often does it refresh?
+
+| Layer | Refresh |
+|---|---|
+| Scanner (GitHub Actions) | every **30 min** (edit the `cron:` in `.github/workflows/scan.yml` to change; `*/15` = 15 min, `*/5` = 5 min — note private repos get 2,000 free Action-min/month, public repos are unlimited) |
+| Market data (Yahoo) | near-live, ~seconds of delay |
+| Dashboard | **live** — Supabase Realtime pushes new/updated rows instantly, no refresh needed |
+
 ## Security notes
 
 - The **service-role key bypasses RLS** — it lives only as a GitHub Actions
@@ -134,12 +182,13 @@ posts new ones (Supabase Realtime).
 
 | Path | What |
 |---|---|
-| `scanner.py` | SMC engine + Supabase push |
+| `scanner.py` | SMC engine + Supabase push + auto close-out + Telegram |
 | `.github/workflows/scan.yml` | Scheduled Actions run |
 | `requirements.txt` | (stdlib only — nothing to install) |
 | `.gitignore` | Keeps secrets out of git |
 | `supabase/schema.sql` | Table, indexes, RLS, realtime, stats view |
+| `supabase/schema_update_outcomes.sql` | Allow dashboard to mark TP/SL (status only) |
 | `dashboard/index.html` | Dashboard UI |
 | `dashboard/styles.css` | Styling |
-| `dashboard/app.js` | Data loading (Supabase + demo mode) |
+| `dashboard/app.js` | Data loading + performance report + outcome marking |
 | `dashboard/netlify.toml` | Netlify static-site config |

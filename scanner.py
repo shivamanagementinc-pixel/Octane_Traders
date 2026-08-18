@@ -32,6 +32,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # --------------------------------------------------------------------------- #
@@ -420,10 +421,104 @@ def push_supabase(sig, cfg):
         return f"err {e}"
 
 
+def telegram_text(sig):
+    u = "$" if sig["pair"] == "XAUUSD" else "pips"
+    return (
+        f"\U0001F6A8 {sig['pair']} {sig['side']} — quality {sig['score']}/100\n"
+        f"Entry {sig['price']:.5f} | SL {sig['sl']:.5f} | TP {sig['tp']:.5f}\n"
+        f"Target +{sig['pips_tp']} {u} | R:R {sig['rr']} | HTF {sig['bias']}\n"
+        f"Liquidity: {sig['flow']}\n"
+        + " · ".join(sig["reasons"][:4])
+    )
+
+
+def send_telegram(text, cfg):
+    """Send a Telegram message. Returns 'skip' when not configured."""
+    token = cfg.get("telegram_token")
+    chat_id = cfg.get("telegram_chat_id")
+    if not token or not chat_id:
+        return "skip"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return "ok"
+    except Exception as e:
+        return f"err {e}"
+
+
+def close_out_signals(cfg):
+    """Auto-resolve open signals: fetch open rows from Supabase, compare the
+    latest price against TP/SL, and mark hit_tp / hit_sl accordingly. Also
+    notifies Telegram. Runs once per scan (so outcomes lag by ≤ the cron
+    interval). Fails silently when Supabase isn't configured."""
+    url = cfg.get("supabase_url")
+    key = cfg.get("supabase_key")
+    if not url or not key:
+        return
+    base = url.rstrip("/") + "/rest/v1"
+    req = urllib.request.Request(
+        f"{base}/signals?status=eq.open&select=id,pair,side,tp,sl",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            rows = json.loads(r.read())
+    except Exception as e:
+        print(f"   [close-out] fetch error: {e}")
+        return
+    changed = 0
+    for row in rows:
+        pair = row.get("pair")
+        side = row.get("side")
+        info = INSTRUMENTS.get(pair)
+        if not info:
+            continue
+        try:
+            last = fetch(info[0], "5m", "1d")[-1][4]
+        except Exception:
+            continue
+        try:
+            tp = float(row["tp"])
+            sl = float(row["sl"])
+        except (TypeError, ValueError):
+            continue
+        new = None
+        if side == "LONG":
+            if last >= tp:
+                new = "hit_tp"
+            elif last <= sl:
+                new = "hit_sl"
+        elif side == "SHORT":
+            if last <= tp:
+                new = "hit_tp"
+            elif last >= sl:
+                new = "hit_sl"
+        if not new:
+            continue
+        patch = urllib.request.Request(
+            f"{base}/signals?id=eq.{row['id']}",
+            data=json.dumps({"status": new}).encode(),
+            method="PATCH",
+            headers={"apikey": key, "Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json", "Prefer": "return=minimal"})
+        try:
+            with urllib.request.urlopen(patch, timeout=15):
+                pass
+            changed += 1
+            print(f"   [close-out] {pair} {side} -> {new}")
+            send_telegram(f"\u2705 {pair} {side}: {new.replace('_', ' ').upper()} (TP {tp:.5f} / SL {sl:.5f})", cfg)
+        except Exception as e:
+            print(f"   [close-out] update error: {e}")
+    if changed:
+        print(f"   [close-out] {changed} open signal(s) resolved")
+
+
 def run(cfg, seen):
     now = dt.datetime.now()
     print(f"\n=== SMC scan {now.strftime('%Y-%m-%d %H:%M:%S %Z')} "
           f"(min {cfg['min_pips']} pips, score >= {cfg['min_score']}) ===")
+    close_out_signals(cfg)
     found = 0
     for pair in cfg["pairs"]:
         sym, pip = INSTRUMENTS[pair]
@@ -446,6 +541,11 @@ def run(cfg, seen):
             res = push_supabase(s, cfg)
             if res not in ("ok", "skip"):
                 print(f"   [supabase: {res}]")
+            # Alert only on a *new* insert ("ok") so re-scans don't spam you.
+            if res in ("ok", "skip"):
+                t = send_telegram(telegram_text(s), cfg)
+                if t not in ("ok", "skip"):
+                    print(f"   [telegram: {t}]")
             found += 1
         elif cfg["verbose"]:
             print(f"   ~ {pair} {s['side']} score {s['score']}/100 "
@@ -471,6 +571,8 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--supabase-url", default=None, help="Supabase project URL")
     ap.add_argument("--supabase-key", default=None, help="Supabase service-role key")
+    ap.add_argument("--telegram-token", default=None, help="Telegram bot token")
+    ap.add_argument("--telegram-chat-id", default=None, help="Telegram chat id")
     args = ap.parse_args()
 
     cfg = {
@@ -481,6 +583,8 @@ def main():
         "verbose": args.verbose,
         "supabase_url": args.supabase_url or os.environ.get("SUPABASE_URL"),
         "supabase_key": args.supabase_key or os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
+        "telegram_token": args.telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN"),
+        "telegram_chat_id": args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID"),
     }
     seen = set()
     for i in range(args.repeat):

@@ -50,13 +50,25 @@
 
   <section id="featured" class="featured"></section>
 
+  <section class="perf-wrap">
+    <div class="perf-head">
+      <h2>📊 Performance Report</h2>
+      <button id="csv-btn" class="btn">Export CSV</button>
+    </div>
+    <div id="perf-cards" class="stats"></div>
+    <div class="perf-grid">
+      <div id="perf-by-pair" class="perf-box"></div>
+      <div id="perf-by-score" class="perf-box"></div>
+    </div>
+  </section>
+
   <section class="table-wrap">
     <table id="table">
       <thead>
         <tr>
           <th>Time</th><th>Pair</th><th>Side</th><th>Quality</th>
           <th>Entry</th><th>SL</th><th>TP</th><th>Potential</th>
-          <th>R:R</th><th>Bias</th><th>Status</th>
+          <th>R:R</th><th>Bias</th><th>Mark outcome</th>
         </tr>
       </thead>
       <tbody></tbody>
