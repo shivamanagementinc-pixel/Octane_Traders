@@ -559,6 +559,26 @@ def telegram_test(cfg):
     print(f"   telegram test -> {r}")
 
 
+def telegram_demo(cfg):
+    """Send a realistic DEMO signal message (same format as a real alert) so
+    you can verify the full signal->Telegram path without waiting for a real
+    setup. Does NOT write anything to Supabase."""
+    token = cfg.get("telegram_token")
+    chat = cfg.get("telegram_chat_id")
+    if not token or not chat:
+        print("   telegram not configured (missing TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
+        return
+    sig = {
+        "pair": "EURUSD", "side": "LONG", "score": 83,
+        "price": 1.1582, "sl": 1.1562, "tp": 1.1623,
+        "pips_tp": 41.0, "rr": 2.1, "bias": "bull", "flow": "up",
+        "reasons": ["HTF(1H) bullish", "sell-side liq swept + reclaim",
+                    "inside Order Block", "inside FVG", "R:R 2.05"],
+    }
+    r = send_telegram(telegram_text(sig) + "\n\n⚠️ DEMO SIGNAL — not a real setup", cfg)
+    print(f"   telegram demo signal -> {r}")
+
+
 def resend_telegram(cfg):
     """Honour dashboard 'resend' requests: rows with resend=true are re-sent to
     Telegram and the flag is cleared. Runs on each scan (so lag ≤ cron interval,
@@ -742,6 +762,10 @@ def main():
     ap.add_argument("--telegram-chat-id", default=None, help="Telegram chat id")
     ap.add_argument("--telegram-test", action="store_true",
                     help="Send a Telegram test message and exit")
+    ap.add_argument("--telegram-demo", action="store_true",
+                    help="Send a realistic DEMO signal to Telegram and exit")
+    ap.add_argument("--telegram-demo", action="store_true",
+                    help="Send a realistic DEMO signal to Telegram and exit")
     ap.add_argument("--blackout-start", default="17:00",
                     help="Daily blackout start HH:MM (default 17:00)")
     ap.add_argument("--blackout-end", default="18:30",
@@ -785,6 +809,9 @@ def main():
     }
     if args.telegram_test:
         telegram_test(cfg)
+        return
+    if args.telegram_demo:
+        telegram_demo(cfg)
         return
     seen = set()
     for i in range(args.repeat):
