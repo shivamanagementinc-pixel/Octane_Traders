@@ -21,7 +21,23 @@
 const TG_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const TG_CHAT = Deno.env.get("TELEGRAM_CHAT_ID") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SR_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// Service key: newer projects expose SUPABASE_SECRET_KEYS (a JSON dict) and
+// mark the legacy SUPABASE_SERVICE_ROLE_KEY as deprecated. Read either.
+function resolveServiceKey(): string {
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  const dict = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (!dict) return "";
+  try {
+    const parsed = JSON.parse(dict);
+    // common shapes: { default: "..." } | { service_role: "..." } | { "0": "..." }
+    return parsed.default ?? parsed.service_role ?? Object.values(parsed)[0] ?? "";
+  } catch {
+    return "";
+  }
+}
+const SUPABASE_SR_KEY = resolveServiceKey();
 
 // Cooldown: don't re-alert the same pair+side within this many minutes on a
 // brand-new signal (mirrors the old --telegram-cooldown-hours behaviour).

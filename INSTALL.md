@@ -44,9 +44,12 @@ your computer.
 | **`anon` / publishable key** | dashboard (browser) | safe to expose |
 | **`service_role` / secret key** | GitHub (scanner) | ⚠️ SECRET |
 
-> **Which key is which?** New dashboards label them `publishable` (= anon, for
-> the browser) and `secret` (= service_role, for the scanner). Old dashboards
-> label them `anon` and `service_role`.
+> **Which key is which?** Supabase now uses two key *sets*:
+> - **`publishable` key** (= old `anon`) → for the browser/dashboard
+> - **`secret` key** (= old `service_role`) → for the scanner (GitHub)
+> Both may appear as `SUPABASE_PUBLISHABLE_KEYS` / `SUPABASE_SECRET_KEYS`
+> (JSON dicts) or legacy `anon` / `service_role` strings depending on your
+> project's age. Either works — just keep the *secret* one server-side.
 
 ---
 
@@ -156,14 +159,25 @@ Telegram the **instant** a row lands — no 5-minute polling lag. It handles:
 - 🔄 **RESEND** (📤 button) → instant, with "🔄 RESEND" on the top line
 - ✅/❌ TP/SL hit → instant alert
 
-### 4b.1 Deploy the function
+### 4b.1 Create the function (current Supabase UI)
 
-1. Supabase → **Edge Functions → New function** → name it `telegram-alert`
-2. Replace the default code with **`supabase/functions/telegram-alert/index.ts`**
-3. Add secrets (Edge Functions → **Secrets**, or via CLI `supabase secrets set`):
-   - `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY`
-4. **Verify JWT → OFF** (the DB trigger calls the function without a browser token)
-5. Deploy
+> ⚠️ The Supabase Edge Functions UI changed in 2025–2026: there is **no
+> "Deploy" button anymore** — the function **deploys automatically when you
+> save it**. (Screenshots showing a Deploy button are from the old UI.)
+
+1. Supabase → **Edge Functions → Functions tab → "Create a new function"**
+   → name it exactly `telegram-alert`
+2. Paste the entire contents of **`supabase/functions/telegram-alert/index.ts`**
+   into the code editor (replacing the default demo code)
+3. Turn **"Verify JWT" / "Enforce JWT verification" → OFF** — the database
+   trigger calls the function without a browser token
+4. **Save** — it deploys automatically (may take a few seconds to propagate;
+   a 404 in the first minute after saving is normal)
+5. **Secrets** (Edge Functions → Secrets tab) — add just these 2:
+   - `TELEGRAM_BOT_TOKEN` = your bot token
+   - `TELEGRAM_CHAT_ID` = your chat id
+   - *(Don't add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — those are
+     injected automatically as default secrets.)*
 
 *(CLI alternative: `supabase functions deploy telegram-alert --no-verify-jwt`)*
 
@@ -183,6 +197,20 @@ Telegram the **instant** a row lands — no 5-minute polling lag. It handles:
 > Telegram themselves — the Edge Function is the single alerting path. (The
 > `Telegram Test` / `Demo Signal` workflows still work, as they call the bot
 > directly.)
+
+### 4b.3 Test it with one curl
+
+Replace `YOUR-REF` with your Reference ID and run in any terminal:
+
+```bash
+curl -i -X POST https://YOUR-REF.supabase.co/functions/v1/telegram-alert \
+  -H "Content-Type: application/json" \
+  -d '{"type":"INSERT","record":{"strategy":"smc","pair":"EURUSD","side":"LONG","score":80,"price":1.15,"sl":1.14,"tp":1.17,"pips_tp":20,"rr":2,"htf_bias":"bull"}}'
+```
+
+- `200` + a 🚨 message in Telegram = the function works ✅
+- `404` = function not deployed yet (or just saved — wait ~30–60s and retry)
+- `401` = "Verify JWT" is still ON — turn it off
 
 ---
 
@@ -239,6 +267,8 @@ All knobs are CLI flags on `scanner.py` (edit them in `.github/workflows/scan.ym
 | `[supabase: skip]` | Secrets not in **Repository** secrets, or `scan.yml` is old |
 | `[telegram: err 401]` | Wrong bot token |
 | No Telegram messages but dashboard updates | Alerts only fire on *new* signals — use the 📤 resend button, or check the cooldown |
+| 📤 resend silent | The Edge Function isn't deployed or is missing the Telegram secrets — see §4b, and test it with the curl in §4b.3 |
+| Edge Function returns 404 | Just saved/deployed? It can take ~30–60s to propagate — retry. Otherwise the function name or project ref is wrong |
 | Workflow missing from Actions tab | `.github/` folder not at repo root (hidden-file issue — see 2a) |
 | `unrecognized arguments` in log | `scanner.py` on GitHub is the old version — re-upload it |
 
