@@ -513,7 +513,7 @@ def close_out_signals(cfg):
                 pass
             changed += 1
             print(f"   [close-out] {pair} {side} -> {new}")
-            send_telegram(f"\u2705 {pair} {side}: {new.replace('_', ' ').upper()} (TP {tp:.5f} / SL {sl:.5f})", cfg)
+            # Telegram alert is sent instantly by the Edge Function (DB trigger).
         except Exception as e:
             print(f"   [close-out] update error: {e}")
     if changed:
@@ -690,7 +690,8 @@ def run(cfg, seen):
     # otherwise dashboard resend requests and TP/SL tracking would stall all
     # evening. Only NEW-signal scanning is gated by session/blackout below.
     close_out_signals(cfg)
-    resend_telegram(cfg)
+    # resend/TP-SL alerts are now fired instantly by the Supabase Edge Function
+    # (see supabase/functions/telegram-alert + telegram-webhook.sql).
     if in_blackout(cfg):
         print(f"   [blackout] {cfg['blackout_start']}–{cfg['blackout_end']} "
               f"{cfg.get('blackout_tz', '')} — no new signals (high-spread window)")
@@ -732,17 +733,11 @@ def run(cfg, seen):
                 continue
         if s["score"] >= cfg["min_score"]:
             seen.add(sig)
-            # Telegram cooldown: only ping if this pair+side hasn't been alerted
-            # recently (recording still happens — every signal feeds the report).
-            fresh = not recently_signaled(cfg, s["pair"], s["side"], cfg["telegram_cooldown_hours"])
             print_signal(s, cfg)
             res = push_supabase(s, cfg)
             if res not in ("ok", "skip"):
                 print(f"   [supabase: {res}]")
-            if res in ("ok", "skip") and fresh:
-                t = send_telegram(telegram_text(s), cfg)
-                if t not in ("ok", "skip"):
-                    print(f"   [telegram: {t}]")
+            # Telegram alert is sent instantly by the Edge Function (DB trigger).
             found += 1
         elif cfg["verbose"]:
             print(f"   ~ {pair} {s['side']} score {s['score']}/100 "

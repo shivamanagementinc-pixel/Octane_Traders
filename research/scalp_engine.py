@@ -274,7 +274,7 @@ def close_out(cfg):
         try:
             with urllib.request.urlopen(patch, timeout=15): pass
             print(f"   [close-out] {row['pair']} {row['side']} -> {new}")
-            send_telegram(f"\u2705 {row['pair']} {row['side']} scalp: {new.upper()}", cfg)
+            # Telegram alert is sent instantly by the Edge Function (DB trigger).
         except Exception as e:
             print(f"   [close-out] err {e}")
 
@@ -303,8 +303,7 @@ def live_scan(cfg):
               f"R:R {s['rr']} RSI {s['rsi']} ({s['bias']})")
         res = push_supabase(s, cfg)
         if res not in ("ok","skip"): print(f"   [supabase: {res}]")
-        t = send_telegram(telegram_text(s), cfg)
-        if t not in ("ok","skip"): print(f"   [telegram: {t}]")
+        # Telegram alert is sent instantly by the Edge Function (DB trigger).
         found += 1
     if not found: print("   no scalp signals right now")
     return found

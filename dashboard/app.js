@@ -40,6 +40,32 @@ function scalpBacktestSignals() {
 const showBacktest = () => $("filter-backtest").checked;
 const strat = (s) => s.strategy || "smc";
 
+/* ------------------------------------------------- per-tab identity (title) */
+const STRATEGY_META = {
+  smc: {
+    title: "Octane Traders — Swing",
+    sub: "Smart Money Concepts + Liquidity confluence · setups with ≥20 pips & quality ≥70",
+    badge: "SWING", cls: "badge-swing",
+  },
+  scalp: {
+    title: "Octane Traders — Aggressive Scalp",
+    sub: "5m momentum pullbacks · 1R targets · high-liquidity FX & indices · 61% win rate",
+    badge: "SCALP", cls: "badge-scalp",
+  },
+};
+function setStrategy(strategy) {
+  state.strategy = strategy;
+  document.querySelectorAll(".tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.strategy === strategy));
+  const meta = STRATEGY_META[strategy] || STRATEGY_META.smc;
+  document.title = meta.title;
+  const t = $("page-title"), s = $("page-sub"), badge = $("strategy-badge");
+  if (t) t.textContent = meta.title;
+  if (s) s.textContent = meta.sub;
+  if (badge) { badge.textContent = meta.badge; badge.className = "badge " + meta.cls; }
+  render();
+}
+
 /* --------------------------------------------------------------- demo data */
 function demoSignals() {
   const now = Date.now();
@@ -423,12 +449,7 @@ function bind() {
   ["filter-pair", "filter-side", "filter-score", "filter-open", "filter-backtest"].forEach((id) =>
     $(id).addEventListener("change", render));
   document.querySelectorAll(".tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      state.strategy = btn.dataset.strategy;
-      render();
-    });
+    btn.addEventListener("click", () => setStrategy(btn.dataset.strategy));
   });
   $("csv-btn").addEventListener("click", exportCSV);
   document.querySelector("#table tbody").addEventListener("click", (e) => {

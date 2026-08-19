@@ -74,7 +74,8 @@ hours only. More wins, smaller targets — for traders who want frequent action.
 ## Features
 
 - ⚡ 5-minute scanning on GitHub Actions (free, no computer needed)
-- 🚨 Instant Telegram alerts on new signals + automatic TP/SL hit messages
+- ⚡ Instant Telegram alerts via a Supabase Edge Function (no polling lag) —
+  new signals, 📤 resends (marked "🔄 RESEND"), and TP/SL hits
 - 📊 Live dashboard with **two tabs**, equity curve, win-rate tracker, per-pair breakdowns
 - 📤 One-click "re-send to Telegram" from the dashboard
 - 📈 Auto outcome tracking (TP/SL marked automatically from live price)

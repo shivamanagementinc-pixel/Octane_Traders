@@ -147,6 +147,45 @@ Now you'll get: 🚨 on every new signal, ✅/❌ on every TP/SL hit.
 
 ---
 
+## 4b. ⚡ Instant Telegram alerts (Edge Function — recommended)
+
+By default the scanners push signals to Supabase and *this* Edge Function sends
+Telegram the **instant** a row lands — no 5-minute polling lag. It handles:
+
+- 🚨/🎯 new signal → instant alert
+- 🔄 **RESEND** (📤 button) → instant, with "🔄 RESEND" on the top line
+- ✅/❌ TP/SL hit → instant alert
+
+### 4b.1 Deploy the function
+
+1. Supabase → **Edge Functions → New function** → name it `telegram-alert`
+2. Replace the default code with **`supabase/functions/telegram-alert/index.ts`**
+3. Add secrets (Edge Functions → **Secrets**, or via CLI `supabase secrets set`):
+   - `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY`
+4. **Verify JWT → OFF** (the DB trigger calls the function without a browser token)
+5. Deploy
+
+*(CLI alternative: `supabase functions deploy telegram-alert --no-verify-jwt`)*
+
+### 4b.2 Wire the trigger
+
+1. Supabase → **SQL Editor → New query**
+2. Paste **`supabase/telegram-webhook.sql`**, **replace `YOUR-PROJECT-REF`** with
+   your project's Reference ID (Settings → General → "Reference ID")
+3. **Run** — this creates a trigger that fires the function on every
+   INSERT/UPDATE of a signal.
+
+> **Alternative (no pg_net):** Dashboard → **Database → Webhooks → New webhook**
+> → table `signals`, events INSERT + UPDATE, URL
+> `https://YOUR-PROJECT-REF.supabase.co/functions/v1/telegram-alert`.
+
+> **No double alerts:** `scanner.py` and `scalp_engine.py` no longer send
+> Telegram themselves — the Edge Function is the single alerting path. (The
+> `Telegram Test` / `Demo Signal` workflows still work, as they call the bot
+> directly.)
+
+---
+
 ## 5. Verify the whole loop (1 min)
 
 1. Dashboard open → green LIVE badge, signals visible
@@ -218,6 +257,8 @@ All knobs are CLI flags on `scanner.py` (edit them in `.github/workflows/scan.ym
 | `supabase/schema.sql` | Table + indexes + RLS + realtime |
 | `supabase/schema_update_v2.sql` | Resend flag + status lock |
 | `supabase/schema_update_v3.sql` | `strategy` column (swing vs scalp) + nullable score |
+| `supabase/functions/telegram-alert/index.ts` | Edge Function — instant Telegram alerts |
+| `supabase/telegram-webhook.sql` | DB trigger → fires the Edge Function on INSERT/UPDATE |
 | `dashboard/` | Static dashboard (Netlify) — Swing + Scalp tabs |
 | `dashboard/backtest-data.js` | Swing walk-forward trades (shown in the history table) |
 | `dashboard/scalp-backtest-data.js` | Scalp walk-forward trades (1R, shown in the history table) |
