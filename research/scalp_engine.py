@@ -253,12 +253,17 @@ def send_telegram(text, cfg):
 
 
 def close_out(cfg):
-    """Auto-resolve open scalp signals (same table, strategy='scalp')."""
+    """Auto-resolve open scalp signals (strategy='scalp').
+
+    Checks the intrabar high/low of every 5m bar SINCE the signal was created —
+    not just the latest close — so a trade whose TP/SL was touched hours ago
+    and then retraced is still marked correctly (conservative: SL wins on a
+    bar where both are touched)."""
     url, key = cfg.get("supabase_url"), cfg.get("supabase_key")
     if not url or not key: return
     base = url.rstrip("/") + "/rest/v1"
     req = urllib.request.Request(
-        f"{base}/signals?status=eq.open&strategy=eq.scalp&select=id,pair,side,tp,sl",
+        f"{base}/signals?status=eq.open&strategy=eq.scalp&select=id,pair,side,tp,sl,created_at",
         headers={"apikey": key, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -268,16 +273,34 @@ def close_out(cfg):
     for row in rows:
         sym = ASSETS.get(row["pair"], (None,))[0]
         if not sym: continue
-        try: last = fetch(sym, "5m", "1d")[-1][4]
-        except Exception: continue
+        try:
+            bars = fetch(sym, "5m", "5d")
+        except Exception:
+            continue
         tp, sl = float(row["tp"]), float(row["sl"])
+        # only bars strictly after the signal's creation time
+        try:
+            created = row.get("created_at")
+            created_ts = dt.datetime.fromisoformat(str(created).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            created_ts = 0.0
         new = None
-        if row["side"] == "LONG":
-            if last >= tp: new = "hit_tp"
-            elif last <= sl: new = "hit_sl"
-        else:
-            if last <= tp: new = "hit_tp"
-            elif last >= sl: new = "hit_sl"
+        for t, o, h, l, c in bars:
+            if t <= created_ts:
+                continue
+            if row["side"] == "LONG":
+                hit_sl = l <= sl
+                hit_tp = h >= tp
+            else:
+                hit_sl = h >= sl
+                hit_tp = l <= tp
+            if hit_sl and hit_tp:
+                new = "hit_sl"          # conservative: stop assumed filled first
+                break
+            if hit_sl:
+                new = "hit_sl"; break
+            if hit_tp:
+                new = "hit_tp"; break
         if not new: continue
         patch = urllib.request.Request(f"{base}/signals?id=eq.{row['id']}",
             data=json.dumps({"status": new}).encode(), method="PATCH",

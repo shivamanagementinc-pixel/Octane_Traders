@@ -455,17 +455,18 @@ def send_telegram(text, cfg):
 
 
 def close_out_signals(cfg):
-    """Auto-resolve open signals: fetch open rows from Supabase, compare the
-    latest price against TP/SL, and mark hit_tp / hit_sl accordingly. Also
-    notifies Telegram. Runs once per scan (so outcomes lag by ≤ the cron
-    interval). Fails silently when Supabase isn't configured."""
+    """Auto-resolve open signals: fetch open rows from Supabase, check the
+    intrabar high/low of every bar SINCE creation (not just the latest close),
+    and mark hit_tp / hit_sl accordingly. Conservative: SL wins on a bar where
+    both are touched. Runs every scan. Fails silently when Supabase isn't
+    configured."""
     url = cfg.get("supabase_url")
     key = cfg.get("supabase_key")
     if not url or not key:
         return
     base = url.rstrip("/") + "/rest/v1"
     req = urllib.request.Request(
-        f"{base}/signals?status=eq.open&select=id,pair,side,tp,sl",
+        f"{base}/signals?status=eq.open&strategy=eq.smc&select=id,pair,side,tp,sl,created_at",
         headers={"apikey": key, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -481,7 +482,7 @@ def close_out_signals(cfg):
         if not info:
             continue
         try:
-            last = fetch(info[0], "5m", "1d")[-1][4]
+            bars = fetch(info[0], "5m", "5d")
         except Exception:
             continue
         try:
@@ -489,17 +490,28 @@ def close_out_signals(cfg):
             sl = float(row["sl"])
         except (TypeError, ValueError):
             continue
+        try:
+            created = row.get("created_at")
+            created_ts = dt.datetime.fromisoformat(str(created).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            created_ts = 0.0
         new = None
-        if side == "LONG":
-            if last >= tp:
-                new = "hit_tp"
-            elif last <= sl:
+        for t, o, h, l, c in bars:
+            if t <= created_ts:
+                continue
+            if side == "LONG":
+                hit_sl = l <= sl
+                hit_tp = h >= tp
+            else:
+                hit_sl = h >= sl
+                hit_tp = l <= tp
+            if hit_sl and hit_tp:
                 new = "hit_sl"
-        elif side == "SHORT":
-            if last <= tp:
-                new = "hit_tp"
-            elif last >= sl:
-                new = "hit_sl"
+                break
+            if hit_sl:
+                new = "hit_sl"; break
+            if hit_tp:
+                new = "hit_tp"; break
         if not new:
             continue
         patch = urllib.request.Request(
