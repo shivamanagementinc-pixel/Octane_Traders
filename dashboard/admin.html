@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Octane Traders — Admin</title>
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="admin.js"></script>
+</head>
+<body>
+<header>
+  <div class="wrap header-inner">
+    <div>
+      <h1>◉ Octane Traders — Admin</h1>
+      <p class="sub">Manage accounts, risk, positions and the master switch</p>
+    </div>
+    <div class="header-actions">
+      <a href="index.html" class="btn btn-ghost">← Dashboard</a>
+      <span id="mode-badge" class="badge badge-demo">DEMO</span>
+      <button id="connect-btn" class="btn">Connect Supabase</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- master switch + quick stats -->
+  <section class="admin-top">
+    <div class="kill">
+      <div class="kill-text">
+        <div class="k">Master trading switch</div>
+        <div class="v" id="kill-state">…</div>
+      </div>
+      <button id="kill-btn" class="btn btn-danger">Toggle</button>
+    </div>
+    <div id="admin-stats" class="stats"></div>
+  </section>
+
+  <!-- accounts -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>MT5 Accounts</h2>
+      <button id="add-account-btn" class="btn btn-primary">+ Add account</button>
+    </div>
+    <table id="accounts-table">
+      <thead>
+        <tr><th>Name</th><th>Broker</th><th>Login</th><th>Risk %</th><th>Active</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="accounts-empty" class="empty hidden">No accounts yet — add your first MT5 demo.</p>
+  </section>
+
+  <!-- positions -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Open Positions</h2>
+      <button id="close-all-btn" class="btn">Close all</button>
+    </div>
+    <table id="positions-table">
+      <thead>
+        <tr><th>Account</th><th>Ticket</th><th>Pair</th><th>Side</th><th>Volume</th><th>SL</th><th>TP</th><th>Opened</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="positions-empty" class="empty hidden">No open positions.</p>
+  </section>
+
+  <p class="foot-note">Stage 1 = demo accounts. Credentials are stored insert-only (never readable from the browser). For live subscriber accounts (Stage 2) we'll add proper auth + a server-side admin API.</p>
+</main>
+
+<!-- add-account modal -->
+<div id="add-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Add MT5 account</h2>
+    <label>Name <input id="a-name" placeholder="e.g. Demo #1"></label>
+    <label>Broker <input id="a-broker" placeholder="e.g. IC Markets"></label>
+    <label>MT5 Login <input id="a-login"></label>
+    <label>MT5 Password <input id="a-pass" type="password"></label>
+    <label>MT5 Server <input id="a-server" placeholder="e.g. ICMarketsSC-Demo"></label>
+    <label>Symbol suffix (optional) <input id="a-suffix" placeholder="e.g. .a"></label>
+    <label>Risk % per trade <input id="a-risk" type="number" value="0.5" step="0.1" min="0.1"></label>
+    <div class="modal-actions">
+      <button id="a-save" class="btn btn-primary">Save</button>
+      <button id="a-cancel" class="btn">Cancel</button>
+    </div>
+    <p id="a-err" class="err hidden"></p>
+  </div>
+</div>
+
+<!-- connect modal -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Connect Supabase</h2>
+    <p class="sub">Paste your project URL and <b>anon / publishable</b> key (never the service-role key).</p>
+    <label>Project URL <input id="supa-url" placeholder="https://YOUR-PROJECT.supabase.co"></label>
+    <label>Anon key <input id="supa-key" placeholder="eyJ..."></label>
+    <div class="modal-actions">
+      <button id="connect-save" class="btn btn-primary">Connect</button>
+      <button id="connect-cancel" class="btn">Cancel</button>
+    </div>
+    <p id="connect-err" class="err hidden"></p>
+  </div>
+</div>
+</body>
+</html>

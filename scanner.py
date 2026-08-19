@@ -465,8 +465,10 @@ def close_out_signals(cfg):
     if not url or not key:
         return
     base = url.rstrip("/") + "/rest/v1"
+    # NOTE: no strategy filter — older rows may predate the strategy column,
+    # so we filter by pair-set membership instead (robust).
     req = urllib.request.Request(
-        f"{base}/signals?status=eq.open&strategy=eq.smc&select=id,pair,side,tp,sl,created_at",
+        f"{base}/signals?status=eq.open&select=id,pair,side,tp,sl,created_at",
         headers={"apikey": key, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -474,6 +476,8 @@ def close_out_signals(cfg):
     except Exception as e:
         print(f"   [close-out] fetch error: {e}")
         return
+    rows = [r for r in rows if r.get("pair") in INSTRUMENTS]
+    print(f"   [close-out] checking {len(rows)} open row(s)")
     changed = 0
     for row in rows:
         pair = row.get("pair")

@@ -143,6 +143,23 @@ table.mini tr:last-child td { border-bottom: none; }
 .m:hover { filter: brightness(1.2); }
 .m-send:hover { border-color: var(--blue); color: var(--blue); }
 
+/* admin page */
+.admin-top { display: flex; gap: 16px; align-items: stretch; margin: 20px 0; flex-wrap: wrap; }
+.admin-top .stats { flex: 1; margin: 0; }
+.kill { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; gap: 18px; min-width: 260px; }
+.kill .k { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.kill .v { font-size: 16px; font-weight: 800; margin-top: 4px; }
+.btn-danger { background: #33121a; border-color: #7f1d1d; color: #fca5a5; }
+.btn-danger:hover { border-color: var(--red); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head h2 { margin: 0; font-size: 15px; }
+.m-tgl { border-radius: 999px; padding: 4px 10px; }
+.m-tgl.on { background: #0c2f1e; color: var(--green); border-color: #166534; }
+.m-del:hover { border-color: var(--red); color: var(--red); }
+.risk-input { width: 74px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.foot-note { color: var(--muted); font-size: 12px; margin: 20px 0 40px; }
+
 @media (max-width: 720px) {
   .perf-grid { grid-template-columns: 1fr; }
 }

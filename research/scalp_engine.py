@@ -262,14 +262,18 @@ def close_out(cfg):
     url, key = cfg.get("supabase_url"), cfg.get("supabase_key")
     if not url or not key: return
     base = url.rstrip("/") + "/rest/v1"
+    # NOTE: no strategy filter here — older rows may predate the strategy
+    # column, so we filter by pair-set membership instead (robust).
     req = urllib.request.Request(
-        f"{base}/signals?status=eq.open&strategy=eq.scalp&select=id,pair,side,tp,sl,created_at",
+        f"{base}/signals?status=eq.open&select=id,pair,side,tp,sl,created_at",
         headers={"apikey": key, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             rows = json.loads(r.read())
     except Exception as e:
         print(f"   [close-out] {e}"); return
+    rows = [r for r in rows if r.get("pair") in ASSETS]
+    print(f"   [close-out] checking {len(rows)} open scalp row(s)")
     for row in rows:
         sym = ASSETS.get(row["pair"], (None,))[0]
         if not sym: continue
