@@ -26,7 +26,12 @@ jobs:
       - name: Build single-file exe
         working-directory: copier
         run: |
-          pyinstaller --onefile --console --name octane-copier copier.py
+          pyinstaller --onefile --console --name octane-copier ^
+            --collect-all MetaTrader5 ^
+            --collect-all tzdata ^
+            --hidden-import config ^
+            --hidden-import lot_calculator ^
+            copier.py
 
       - name: Bundle runtime config files
         shell: pwsh
