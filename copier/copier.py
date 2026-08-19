@@ -30,6 +30,11 @@ import datetime as dt
 import urllib.request
 
 try:
+    from zoneinfo import ZoneInfo
+except ImportError:           # Python < 3.9
+    ZoneInfo = None
+
+try:
     import MetaTrader5 as mt5
     MT5_AVAILABLE = True
 except ImportError:
@@ -40,6 +45,44 @@ from lot_calculator import size_lots
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# Trading-hours guard (mirrors the scanner): only OPEN new trades inside
+# London/NY hours and outside the 5pm rollover blackout. Close commands and
+# reconciliation always run.
+SESSION_HOURS = [(3, 17)]      # ET hours
+BLACKOUT = ("17:00", "18:30")  # ET
+
+
+def _tz():
+    """America/Toronto tz, with a Windows fallback (zoneinfo needs tzdata)."""
+    tzname = os.environ.get("COPIEUR_TZ", "America/Toronto")
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(tzname)
+        except Exception:
+            pass
+    # Fallback: naive EDT (UTC-4). DST-wrong for half the year — install
+    # `tzdata` (pip install tzdata) for correct behaviour on Windows.
+    print(f"   [warn] timezone database missing — using UTC-4 fallback. "
+          f"Run: pip install tzdata")
+    return dt.timezone(dt.timedelta(hours=-4))
+
+
+TRADE_TZ = _tz()
+
+
+def trading_allowed():
+    now = dt.datetime.now(TRADE_TZ)
+    for lo, hi in SESSION_HOURS:
+        if lo <= now.hour < hi:
+            sh, sm = (int(x) for x in BLACKOUT[0].split(":"))
+            eh, em = (int(x) for x in BLACKOUT[1].split(":"))
+            s = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            e = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+            if e <= s:
+                return not (now >= s or now < e)
+            return not (s <= now < e)
+    return False
 
 # ------------------------------------------------------------------ supabase
 def sb(method, path, payload=None):
@@ -198,8 +241,12 @@ def run_once(watermark):
 
     if not enabled:
         print(f"   [kill-switch] trading paused — processing only admin close commands")
+    elif not trading_allowed():
+        print(f"   [hours] outside trading session/blackout — not opening new trades")
     else:
         print(f"   [copier] {len(accounts)} account(s), {len(sigs)} new signal(s)")
+
+    open_new = enabled and trading_allowed()
 
     for sig in sigs:
         our_pair = sig["pair"]
@@ -208,10 +255,10 @@ def run_once(watermark):
         for acc in accounts:
             if (acc["id"], sig["id"]) in placed_keys:
                 continue
+            if not open_new:
+                continue
             # size the trade from this account's own risk %
             cred = cred_by_acc[acc["id"]]
-            if not enabled:
-                continue
             symbol_map = mt5_account(SYMBOL_MAP, cred)
             if symbol_map is None:
                 continue
@@ -241,9 +288,6 @@ def run_once(watermark):
                 continue
             print(f"   [trade] {acc['name']} {our_pair} {sig['side']} vol={volume} "
                   f"(balance={balance:.0f}, risk={acc['risk_pct']}%, stop={sig['pips_sl']})")
-            if not enabled:
-                mt5.shutdown()
-                continue
             res = place_order(sym, sig["side"], volume, sig["sl"], sig["tp"],
                               f"octane {our_pair} {sig['side']}")
             if res is not None and res.order > 0:

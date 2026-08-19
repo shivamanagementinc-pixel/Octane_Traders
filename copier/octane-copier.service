@@ -1,0 +1,31 @@
+# Octane Traders — copier systemd service (Linux VPS)
+#
+# Install:
+#   1. put the copier folder somewhere stable, e.g. /opt/octane/copier
+#   2. edit the paths + secrets below
+#   3. sudo cp octane-copier.service /etc/systemd/system/
+#   4. sudo systemctl daemon-reload
+#   5. sudo systemctl enable --now octane-copier
+#
+# Useful commands:
+#   sudo systemctl status octane-copier     # see if it's running
+#   sudo journalctl -u octane-copier -f     # tail the logs
+#   sudo systemctl restart octane-copier    # restart after editing config
+
+[Unit]
+Description=Octane Traders trade copier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/octane/copier
+Environment=SUPABASE_URL=https://YOUR-REF.supabase.co
+Environment=SUPABASE_SERVICE_ROLE_KEY=sb_secret_YOUR_SERVICE_ROLE_KEY
+Environment=COPIEUR_TZ=America/Toronto
+ExecStart=/usr/bin/python3 copier.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

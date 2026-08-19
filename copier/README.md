@@ -56,6 +56,23 @@ signals (Supabase) ──▶ copier.py ──▶ each active MT5 account
 - Min lot 0.01, max 100, and MT5's own symbol min/step is also enforced
 - Master kill-switch pauses new entries but still allows close commands
 - Only signals with a valid stop distance are traded (no stop = skip)
+- **Trading-hours guard**: new trades are only opened during London/NY
+  (03:00–17:00 ET) and NOT during the 17:00–18:30 rollover blackout. Close
+  commands and position reconciliation always run, 24/5.
+
+## Run it 24/7 (systemd — auto-restart on reboot)
+
+A ready-made service file is included (`octane-copier.service`):
+
+```bash
+sudo cp octane-copier.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now octane-copier
+journalctl -u octane-copier -f     # tail logs
+```
+
+Edit the `WorkingDirectory`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+inside the .service file first.
 
 ## Troubleshooting
 
