@@ -49,7 +49,7 @@ const STRATEGY_META = {
   },
   scalp: {
     title: "Octane Traders — Aggressive Scalp",
-    sub: "5m momentum pullbacks · 1R targets · high-liquidity FX & indices · 61% win rate",
+    sub: "5m momentum pullbacks · 1.5R targets · min 5 pips · high-liquidity FX & indices · 62% win rate",
     badge: "SCALP", cls: "badge-scalp",
   },
 };
@@ -199,7 +199,7 @@ function render() {
     ["Signals", all.length],
     ["Open", open],
     ["Win rate", wr + `<small>${wins}W / ${decided - wins}L</small>`],
-    ["Target", "1R" + `<small>1×ATR stop & target</small>`],
+    ["Target", "1.5R" + `<small>1×ATR stop · 1.5×ATR target</small>`],
     ["Wins", wins],
   ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")
   : [
@@ -223,7 +223,7 @@ function render() {
     <div class="card ${!isScalp && s.score >= 80 ? "star" : ""}">
       <div class="top">
         <span class="pair">${s.pair} <span class="side-${s.side.toLowerCase()}">${s.side}</span></span>
-        <span class="score-pill ${isScalp ? "score-hi" : scoreClass(s.score)}">${isScalp ? "1R" : s.score}</span>
+        <span class="score-pill ${isScalp ? "score-hi" : scoreClass(s.score)}">${isScalp ? "1.5R" : s.score}</span>
       </div>
       <div class="levels">
         <div class="lv"><div class="k">Entry</div><div class="v">${fmtPrice(s.pair, s.price)}</div></div>
@@ -243,7 +243,7 @@ function render() {
       <td class="pair-cell">${s.pair}</td>
       <td class="${s.side === "LONG" ? "side-long" : "side-short"}">${s.side}</td>
       <td>${isScalp
-        ? `<span class="score-pill score-hi">${s.deal_pos != null ? "RSI " + s.deal_pos : "1R"}</span>`
+        ? `<span class="score-pill score-hi">${s.deal_pos != null ? "RSI " + s.deal_pos : "1.5R"}</span>`
         : `<span class="score-pill ${scoreClass(s.score)}">${s.score ?? "—"}</span>`}</td>
       <td class="num">${fmtPrice(s.pair, s.price)}</td>
       <td class="num muted">${fmtPrice(s.pair, s.sl)}</td>
@@ -321,7 +321,7 @@ function renderEquity() {
 
   const series = [];
   if (eq.length) {
-    series.push({ pts: eq.map((p) => p[1]), label: isScalp ? "Scalp backtest (1R)" : "Backtest (walk-forward)", color: "#059669" });
+    series.push({ pts: eq.map((p) => p[1]), label: isScalp ? "Scalp backtest (1.5R)" : "Backtest (walk-forward)", color: "#059669" });
   }
   const live = state.signals
     .filter((s) => !s.is_backtest && strat(s) === state.strategy && (s.status === "hit_tp" || s.status === "hit_sl"))

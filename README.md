@@ -65,11 +65,13 @@ The dashboard has two tabs:
 | Tab | Strategy | Target | Win rate (backtest) | Expectancy |
 |---|---|---|---|---|
 | **Swing** | SMC + liquidity (15m) | 2–4R at liquidity pools | 40.3% | +0.62R/trade |
-| **Aggressive Scalp** | 5m momentum pullbacks (1m/5m timing) | **1R** (or 1.5R) | **60.9%** | +0.22R/trade |
+| **Aggressive Scalp** | 5m momentum pullbacks (1m/5m timing) | **1.5R** (min 5 pips FX / 30 pts index) | **62.0%** | +0.55R/trade gross |
 
 The scalp engine trades high-liquidity FX + indices (EURUSD, GBPUSD, USDJPY,
-AUDUSD, USDCAD, SPX500, NAS100, US30) with 1×ATR stops and targets, London/NY
-hours only. More wins, smaller targets — for traders who want frequent action.
+AUDUSD, USDCAD, SPX500, NAS100, US30) with 1×ATR stops and 1.5×ATR targets,
+London/NY hours only. A minimum-target filter (5 pips FX / 30 pts index) skips
+sub-cost trades — a 1–2 pip target is smaller than spread+commission, so it
+can't win net. More wins, smaller targets — for traders who want frequent action.
 
 ## Features
 

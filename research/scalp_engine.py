@@ -49,7 +49,9 @@ RSI_BUY = 38.0
 RSI_SELL = 62.0
 ATR_N = 14
 SL_ATR = 1.0
-TP_ATR = 1.0        # default 1R (more wins); use --tp-atr 1.5 for 1.5R
+TP_ATR = 1.5        # default 1.5R (backtested best net of costs)
+MIN_PIPS_FX = 5.0   # skip FX signals whose target is under this many pips
+MIN_PTS_IDX = 30.0  # skip index signals whose target is under this many points
 MAX_HOLD = 24
 SESSION = [(3, 17)]
 
@@ -132,6 +134,12 @@ def signal(asset, rows15, rows5, cfg):
     pip_size = ASSETS[asset][1]
     pips_sl = abs(price - sl) / pip_size
     pips_tp = abs(price - tp) / pip_size
+    # minimum-target filter: a 1-2 pip target is smaller than the round-trip
+    # spread/commission cost, so it's unwinnable net. Skip those.
+    is_idx = asset in ("SPX500", "NAS100", "US30")
+    min_target = cfg.get("min_pts_idx", MIN_PTS_IDX) if is_idx else cfg.get("min_pips_fx", MIN_PIPS_FX)
+    if pips_tp < min_target:
+        return None
     return {
         "asset": asset, "side": side, "price": price, "sl": sl, "tp": tp,
         "rsi": round(r,1), "atr": round(a,5), "bias": bdir,
@@ -320,9 +328,14 @@ def main():
     ap.add_argument("--sl-atr", type=float, default=SL_ATR)
     ap.add_argument("--rsi-buy", type=float, default=RSI_BUY)
     ap.add_argument("--rsi-sell", type=float, default=RSI_SELL)
+    ap.add_argument("--min-pips-fx", type=float, default=MIN_PIPS_FX,
+                    help="skip FX signals with a target under this many pips")
+    ap.add_argument("--min-pts-idx", type=float, default=MIN_PTS_IDX,
+                    help="skip index signals with a target under this many points")
     args = ap.parse_args()
     cfg = {"tp_atr": args.tp_atr, "sl_atr": args.sl_atr,
            "rsi_buy": args.rsi_buy, "rsi_sell": args.rsi_sell,
+           "min_pips_fx": args.min_pips_fx, "min_pts_idx": args.min_pts_idx,
            "sessions": SESSION,
            "supabase_url": os.environ.get("SUPABASE_URL"),
            "supabase_key": os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
