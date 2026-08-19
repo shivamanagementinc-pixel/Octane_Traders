@@ -1,0 +1,45 @@
+name: Build Copier (Windows .exe)
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "copier/**"
+      - ".github/workflows/build-copier.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller MetaTrader5 tzdata requests
+
+      - name: Build single-file exe
+        working-directory: copier
+        run: |
+          pyinstaller --onefile --console --name octane-copier copier.py
+
+      - name: Bundle runtime config files
+        shell: pwsh
+        run: |
+          Copy-Item copier/copier.ini.example copier/dist/copier.ini.example
+          Copy-Item copier/config_local.py.example copier/dist/config_local.py.example
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: octane-copier-windows
+          path: |
+            copier/dist/octane-copier.exe
+            copier/dist/copier.ini.example
+            copier/dist/config_local.py.example
+          if-no-files-found: error
