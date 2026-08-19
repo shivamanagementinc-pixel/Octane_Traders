@@ -35,9 +35,10 @@ h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
 .badge-demo { background: #3b2a0f; color: var(--amber); border: 1px solid #6b4c10; }
 .badge-live { background: #0c2f1e; color: var(--green); border: 1px solid #166534; }
 
-.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: none; display: inline-block; }
 .btn:hover { border-color: var(--accent); }
 .btn-primary { background: var(--accent); border-color: var(--accent); }
+.btn-ghost { background: transparent; }
 
 /* stats */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 20px 0; }
