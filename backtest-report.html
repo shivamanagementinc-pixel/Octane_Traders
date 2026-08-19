@@ -83,16 +83,16 @@
 
   <div class="cards">
     <div class="card"><div class="k">Starting point</div><div class="v neg">−0.03R</div><small>expectancy/trade (losing)</small></div>
-    <div class="card"><div class="k">Final system</div><div class="v pos">+0.74R</div><small>expectancy/trade</small></div>
-    <div class="card"><div class="k">Win rate</div><div class="v">42.4%</div><small>with avg R:R ≈ 2.4</small></div>
-    <div class="card"><div class="k">Signals</div><div class="v">~2.4/day</div><small>high-quality only</small></div>
+    <div class="card"><div class="k">Final system</div><div class="v pos">+0.62R</div><small>expectancy/trade</small></div>
+    <div class="card"><div class="k">Win rate</div><div class="v">40.3%</div><small>with avg R:R ≈ 2.4</small></div>
+    <div class="card"><div class="k">Signals</div><div class="v">~2.5/day</div><small>high-quality only</small></div>
     <div class="card"><div class="k">Improvement</div><div class="v pos">≈ 20×</div><small>in per-trade expectancy</small></div>
   </div>
 
   <div class="callout">
     <b>Bottom line:</b> the same scanner, after data-driven filtering, went from ~92 noisy
     signals/day at −0.03R expectancy to ~2.5 focused signals/day at +0.62R expectancy.
-    Win rate rose from 24.6% to 42.4% — while trading a third of the candidates.
+    Win rate rose from 24.6% to 40.3% — while trading a third of the candidates.
   </div>
 
   <div class="note">
@@ -160,7 +160,7 @@
     <tr><td>Old: 9 pairs, all scores ≥70</td><td class="num">~92</td><td class="num">24.6%</td><td class="num bad">−0.03R</td><td class="num">—</td></tr>
     <tr><td>4 pairs, score 70–89</td><td class="num">~9</td><td class="num">29.4%</td><td class="num good">+0.19R</td><td class="num good">+0.16R</td></tr>
     <tr><td>+ bias alignment</td><td class="num">~4</td><td class="num">35.7%</td><td class="num good">+0.41R</td><td class="num good">+0.21R</td></tr>
-    <tr class="hl"><td><b>Final: + London/NY session</b></td><td class="num"><b>~2.4</b></td><td class="num"><b>42.4%</b></td><td class="num good"><b>+0.74R</b></td><td class="num good"><b>+69.7R total</b></td></tr>
+    <tr class="hl"><td><b>Final: + London/NY session</b></td><td class="num"><b>~2.4</b></td><td class="num"><b>40.3%</b></td><td class="num good"><b>+0.62R</b></td><td class="num good"><b>+92.5R total</b></td></tr>
     <tr><td>Score 90+ only ("chase zone")</td><td class="num">—</td><td class="num">22.1%</td><td class="num bad">−0.12R</td><td class="num">dropped</td></tr>
   </table>
 
@@ -172,8 +172,8 @@
     <div class="bar"><i style="width:29.4%;background:var(--amber)"></i></div>
     <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:10px"><span>+ bias alignment</span><b>35.7%</b></div>
     <div class="bar"><i style="width:35.7%;background:var(--blue)"></i></div>
-    <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:10px"><span>Final (+ session)</span><b>42.4%</b></div>
-    <div class="bar"><i style="width:42.4%;background:var(--green)"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:10px"><span>Final (+ session)</span><b>40.3%</b></div>
+    <div class="bar"><i style="width:40.3%;background:var(--green)"></i></div>
     <div class="legend" style="margin-top:10px">Win rate at R:R ≈ 1.5–4. A 40% win rate at these R:R levels is strongly net-positive.</div>
   </div>
 </section>
@@ -185,50 +185,49 @@
     full backtest window. One line, every trade, no curve-fitting — this is what the system actually did.</p>
 
   <div class="cards">
-    <div class="card"><div class="k">Trades</div><div class="v">94</div><small>over the walk-forward window</small></div>
-    <div class="card"><div class="k">Win rate</div><div class="v">42.4%</div><small>39W / 53L (2 expired)</small></div>
-    <div class="card"><div class="k">Total P&amp;L</div><div class="v pos">+69.7R</div><small>risk-units</small></div>
-    <div class="card"><div class="k">Expectancy</div><div class="v pos">+0.74R</div><small>per trade</small></div>
-    <div class="card"><div class="k">Peak drawdown</div><div class="v warn">−8R</div><small>max give-back</small></div>
+    <div class="card"><div class="k">Trades</div><div class="v">152</div><small>over the walk-forward window</small></div>
+    <div class="card"><div class="k">Win rate</div><div class="v">40.3%</div><small>60W / 89L (2 expired)</small></div>
+    <div class="card"><div class="k">Total P&amp;L</div><div class="v pos">+92.5R</div><small>risk-units</small></div>
+    <div class="card"><div class="k">Expectancy</div><div class="v pos">+0.62R</div><small>per trade</small></div>
+    <div class="card"><div class="k">Peak drawdown</div><div class="v warn">−13R</div><small>max give-back</small></div>
   </div>
 
   <svg viewBox="0 0 900 340" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px">
-<defs>
-  <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="#059669" stop-opacity="0.18"/>
-    <stop offset="100%" stop-color="#059669" stop-opacity="0"/>
-  </linearGradient>
-</defs>
-<line x1="50" y1="295.4" x2="880" y2="295.4" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="299.4" text-anchor="end" font-size="10" fill="#64748b">0R</text>
-<line x1="50" y1="264.4" x2="880" y2="264.4" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="268.4" text-anchor="end" font-size="10" fill="#64748b">10R</text>
-<line x1="50" y1="233.4" x2="880" y2="233.4" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="237.4" text-anchor="end" font-size="10" fill="#64748b">20R</text>
-<line x1="50" y1="202.4" x2="880" y2="202.4" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="206.4" text-anchor="end" font-size="10" fill="#64748b">30R</text>
-<line x1="50" y1="171.5" x2="880" y2="171.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="175.5" text-anchor="end" font-size="10" fill="#64748b">40R</text>
-<line x1="50" y1="140.5" x2="880" y2="140.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="144.5" text-anchor="end" font-size="10" fill="#64748b">50R</text>
-<line x1="50" y1="109.5" x2="880" y2="109.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="113.5" text-anchor="end" font-size="10" fill="#64748b">60R</text>
-<line x1="50" y1="78.5" x2="880" y2="78.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="82.5" text-anchor="end" font-size="10" fill="#64748b">70R</text>
-<line x1="50" y1="47.5" x2="880" y2="47.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="42" y="51.5" text-anchor="end" font-size="10" fill="#64748b">80R</text>
-<line x1="50" y1="295.4" x2="880" y2="295.4" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3"/>
-<path d="M50.0,295.4 L50.0,286.7 L58.9,278.7 L67.8,272.5 L76.8,263.5 L85.7,253.9 L94.6,257.0 L103.5,260.1 L112.5,240.9 L121.4,225.1 L130.3,228.2 L139.2,231.3 L148.2,234.4 L157.1,237.4 L166.0,240.5 L174.9,229.4 L183.9,229.4 L192.8,223.5 L201.7,218.6 L210.6,211.1 L219.6,214.2 L228.5,192.2 L237.4,183.2 L246.3,171.8 L255.3,158.8 L264.2,150.7 L273.1,145.4 L282.0,148.5 L291.0,151.6 L299.9,154.7 L308.8,157.8 L317.7,147.9 L326.7,141.4 L335.6,144.5 L344.5,147.6 L353.4,150.7 L362.4,143.0 L371.3,146.1 L380.2,139.6 L389.1,134.3 L398.1,137.4 L407.0,140.5 L415.9,143.6 L424.8,146.7 L433.8,139.6 L442.7,142.7 L451.6,145.7 L460.5,126.2 L469.5,129.3 L478.4,119.1 L487.3,108.6 L496.2,111.7 L505.2,114.8 L514.1,117.9 L523.0,121.0 L531.9,124.1 L540.9,112.0 L549.8,98.7 L558.7,89.4 L567.6,92.5 L576.6,95.6 L585.5,88.1 L594.4,91.2 L603.3,81.3 L612.3,74.2 L621.2,61.8 L630.1,49.7 L639.0,52.8 L648.0,38.9 L656.9,42.0 L665.8,45.1 L674.7,48.2 L683.7,38.6 L692.6,33.3 L701.5,36.4 L710.4,39.5 L719.4,42.6 L728.3,45.7 L737.2,48.8 L746.1,51.9 L755.1,55.0 L764.0,58.1 L772.9,53.1 L781.8,48.5 L790.8,51.6 L799.7,54.7 L808.6,57.8 L817.5,60.9 L826.5,64.0 L835.4,67.1 L844.3,70.2 L853.2,73.3 L862.2,76.4 L871.1,76.4 L880.0,79.5 L880.0,295.4 Z" fill="url(#area)"/>
-<polyline points="50.0,286.7 58.9,278.7 67.8,272.5 76.8,263.5 85.7,253.9 94.6,257.0 103.5,260.1 112.5,240.9 121.4,225.1 130.3,228.2 139.2,231.3 148.2,234.4 157.1,237.4 166.0,240.5 174.9,229.4 183.9,229.4 192.8,223.5 201.7,218.6 210.6,211.1 219.6,214.2 228.5,192.2 237.4,183.2 246.3,171.8 255.3,158.8 264.2,150.7 273.1,145.4 282.0,148.5 291.0,151.6 299.9,154.7 308.8,157.8 317.7,147.9 326.7,141.4 335.6,144.5 344.5,147.6 353.4,150.7 362.4,143.0 371.3,146.1 380.2,139.6 389.1,134.3 398.1,137.4 407.0,140.5 415.9,143.6 424.8,146.7 433.8,139.6 442.7,142.7 451.6,145.7 460.5,126.2 469.5,129.3 478.4,119.1 487.3,108.6 496.2,111.7 505.2,114.8 514.1,117.9 523.0,121.0 531.9,124.1 540.9,112.0 549.8,98.7 558.7,89.4 567.6,92.5 576.6,95.6 585.5,88.1 594.4,91.2 603.3,81.3 612.3,74.2 621.2,61.8 630.1,49.7 639.0,52.8 648.0,38.9 656.9,42.0 665.8,45.1 674.7,48.2 683.7,38.6 692.6,33.3 701.5,36.4 710.4,39.5 719.4,42.6 728.3,45.7 737.2,48.8 746.1,51.9 755.1,55.0 764.0,58.1 772.9,53.1 781.8,48.5 790.8,51.6 799.7,54.7 808.6,57.8 817.5,60.9 826.5,64.0 835.4,67.1 844.3,70.2 853.2,73.3 862.2,76.4 871.1,76.4 880.0,79.5" fill="none" stroke="#059669" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="50.0" y="326" text-anchor="middle" font-size="10" fill="#64748b">06-01</text>
-<text x="469.5" y="326" text-anchor="middle" font-size="10" fill="#64748b">07-17</text>
-<text x="880.0" y="326" text-anchor="middle" font-size="10" fill="#64748b">08-17</text>
-<text x="50" y="16" font-size="11" font-weight="700" fill="#0f172a">Cumulative P&amp;L (R) — final config, walk-forward</text>
+<defs><linearGradient id="eqArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#059669" stop-opacity="0.18"/><stop offset="100%" stop-color="#059669" stop-opacity="0"/></linearGradient></defs>
+<line x1="50" y1="290.7" x2="880" y2="290.7" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="294.7" text-anchor="end" font-size="10" fill="#64748b">0R</text>
+<line x1="50" y1="266.6" x2="880" y2="266.6" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="270.6" text-anchor="end" font-size="10" fill="#64748b">10R</text>
+<line x1="50" y1="242.6" x2="880" y2="242.6" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="246.6" text-anchor="end" font-size="10" fill="#64748b">20R</text>
+<line x1="50" y1="218.5" x2="880" y2="218.5" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="222.5" text-anchor="end" font-size="10" fill="#64748b">30R</text>
+<line x1="50" y1="194.4" x2="880" y2="194.4" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="198.4" text-anchor="end" font-size="10" fill="#64748b">40R</text>
+<line x1="50" y1="170.4" x2="880" y2="170.4" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="174.4" text-anchor="end" font-size="10" fill="#64748b">50R</text>
+<line x1="50" y1="146.3" x2="880" y2="146.3" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="150.3" text-anchor="end" font-size="10" fill="#64748b">60R</text>
+<line x1="50" y1="122.2" x2="880" y2="122.2" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="126.2" text-anchor="end" font-size="10" fill="#64748b">70R</text>
+<line x1="50" y1="98.1" x2="880" y2="98.1" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="102.1" text-anchor="end" font-size="10" fill="#64748b">80R</text>
+<line x1="50" y1="74.1" x2="880" y2="74.1" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="78.1" text-anchor="end" font-size="10" fill="#64748b">90R</text>
+<line x1="50" y1="50.0" x2="880" y2="50.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="54.0" text-anchor="end" font-size="10" fill="#64748b">100R</text>
+<line x1="50" y1="25.9" x2="880" y2="25.9" stroke="#e2e8f0" stroke-width="1"/>
+<text x="42" y="29.9" text-anchor="end" font-size="10" fill="#64748b">110R</text>
+<line x1="50" y1="290.7" x2="880" y2="290.7" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M50.0,290.7 L50.0,284.0 L55.5,277.7 L61.0,280.1 L66.5,282.5 L72.0,277.7 L77.5,270.7 L83.0,273.1 L88.5,269.3 L94.0,271.7 L99.5,274.1 L105.0,274.1 L110.5,276.5 L116.0,266.9 L121.5,269.3 L127.0,261.8 L132.5,264.2 L137.9,266.6 L143.4,269.0 L148.9,253.9 L154.4,241.6 L159.9,244.0 L165.4,246.4 L170.9,248.8 L176.4,251.2 L181.9,253.6 L187.4,245.0 L192.9,245.0 L198.4,247.4 L203.9,249.8 L209.4,252.2 L214.9,254.6 L220.4,250.3 L225.9,246.4 L231.4,240.6 L236.9,243.0 L242.4,245.5 L247.9,247.9 L253.4,250.3 L258.9,233.2 L264.4,235.6 L269.9,228.6 L275.4,219.5 L280.9,221.9 L286.4,212.0 L291.9,205.7 L297.4,208.1 L302.8,210.5 L308.3,203.1 L313.8,198.8 L319.3,201.2 L324.8,203.6 L330.3,206.0 L335.8,198.8 L341.3,191.1 L346.8,186.5 L352.3,180.9 L357.8,183.3 L363.3,175.6 L368.8,170.6 L374.3,173.0 L379.8,175.4 L385.3,177.8 L390.8,180.2 L396.3,182.6 L401.8,185.0 L407.3,187.4 L412.8,189.8 L418.3,183.8 L423.8,173.7 L429.3,164.6 L434.8,167.0 L440.3,161.7 L445.8,157.6 L451.3,160.0 L456.8,162.4 L462.3,164.8 L467.7,167.2 L473.2,160.2 L478.7,154.7 L484.2,157.1 L489.7,159.5 L495.2,161.9 L500.7,156.6 L506.2,159.0 L511.7,161.4 L517.2,163.9 L522.7,166.3 L528.2,162.2 L533.7,157.1 L539.2,141.7 L544.7,144.1 L550.2,146.5 L555.7,138.8 L561.2,130.6 L566.7,133.0 L572.2,135.4 L577.7,137.9 L583.2,140.3 L588.7,142.7 L594.2,133.3 L599.7,122.9 L605.2,115.7 L610.7,118.1 L616.2,114.0 L621.7,116.4 L627.2,110.4 L632.6,112.8 L638.1,105.4 L643.6,107.8 L649.1,102.0 L654.6,91.4 L660.1,87.3 L665.6,77.9 L671.1,68.3 L676.6,70.7 L682.1,59.9 L687.6,62.3 L693.1,58.2 L698.6,60.6 L704.1,63.0 L709.6,55.5 L715.1,44.0 L720.6,39.9 L726.1,42.3 L731.6,36.5 L737.1,38.9 L742.6,41.3 L748.1,36.0 L753.6,38.4 L759.1,40.8 L764.6,43.3 L770.1,45.7 L775.6,48.1 L781.1,50.5 L786.6,46.6 L792.1,43.0 L797.5,45.4 L803.0,47.8 L808.5,50.2 L814.0,52.6 L819.5,55.1 L825.0,57.5 L830.5,48.8 L836.0,51.2 L841.5,53.6 L847.0,56.0 L852.5,58.4 L858.0,60.8 L863.5,63.2 L869.0,65.6 L874.5,65.6 L880.0,68.0 L880.0,290.7 Z" fill="url(#eqArea)"/>
+<polyline points="50.0,284.0 55.5,277.7 61.0,280.1 66.5,282.5 72.0,277.7 77.5,270.7 83.0,273.1 88.5,269.3 94.0,271.7 99.5,274.1 105.0,274.1 110.5,276.5 116.0,266.9 121.5,269.3 127.0,261.8 132.5,264.2 137.9,266.6 143.4,269.0 148.9,253.9 154.4,241.6 159.9,244.0 165.4,246.4 170.9,248.8 176.4,251.2 181.9,253.6 187.4,245.0 192.9,245.0 198.4,247.4 203.9,249.8 209.4,252.2 214.9,254.6 220.4,250.3 225.9,246.4 231.4,240.6 236.9,243.0 242.4,245.5 247.9,247.9 253.4,250.3 258.9,233.2 264.4,235.6 269.9,228.6 275.4,219.5 280.9,221.9 286.4,212.0 291.9,205.7 297.4,208.1 302.8,210.5 308.3,203.1 313.8,198.8 319.3,201.2 324.8,203.6 330.3,206.0 335.8,198.8 341.3,191.1 346.8,186.5 352.3,180.9 357.8,183.3 363.3,175.6 368.8,170.6 374.3,173.0 379.8,175.4 385.3,177.8 390.8,180.2 396.3,182.6 401.8,185.0 407.3,187.4 412.8,189.8 418.3,183.8 423.8,173.7 429.3,164.6 434.8,167.0 440.3,161.7 445.8,157.6 451.3,160.0 456.8,162.4 462.3,164.8 467.7,167.2 473.2,160.2 478.7,154.7 484.2,157.1 489.7,159.5 495.2,161.9 500.7,156.6 506.2,159.0 511.7,161.4 517.2,163.9 522.7,166.3 528.2,162.2 533.7,157.1 539.2,141.7 544.7,144.1 550.2,146.5 555.7,138.8 561.2,130.6 566.7,133.0 572.2,135.4 577.7,137.9 583.2,140.3 588.7,142.7 594.2,133.3 599.7,122.9 605.2,115.7 610.7,118.1 616.2,114.0 621.7,116.4 627.2,110.4 632.6,112.8 638.1,105.4 643.6,107.8 649.1,102.0 654.6,91.4 660.1,87.3 665.6,77.9 671.1,68.3 676.6,70.7 682.1,59.9 687.6,62.3 693.1,58.2 698.6,60.6 704.1,63.0 709.6,55.5 715.1,44.0 720.6,39.9 726.1,42.3 731.6,36.5 737.1,38.9 742.6,41.3 748.1,36.0 753.6,38.4 759.1,40.8 764.6,43.3 770.1,45.7 775.6,48.1 781.1,50.5 786.6,46.6 792.1,43.0 797.5,45.4 803.0,47.8 808.5,50.2 814.0,52.6 819.5,55.1 825.0,57.5 830.5,48.8 836.0,51.2 841.5,53.6 847.0,56.0 852.5,58.4 858.0,60.8 863.5,63.2 869.0,65.6 874.5,65.6 880.0,68.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="50.0" y="326" text-anchor="middle" font-size="10" fill="#64748b">06-01</text><text x="467.7" y="326" text-anchor="middle" font-size="10" fill="#64748b">07-13</text><text x="880.0" y="326" text-anchor="middle" font-size="10" fill="#64748b">08-17</text>
+<text x="50" y="16" font-size="11" font-weight="700" fill="#0f172a">Cumulative P&amp;L (R) — walk-forward backtest</text>
 </svg>
 
   <div class="note">
     <b>Reading this chart:</b> each step up is a winning trade (+R:R), each step down a losing one (−1R).
-    The curve climbs from 0R to +69.7R with controlled drawdowns — the visual signature of a
+    The curve climbs from 0R to +92.5R with controlled drawdowns — the visual signature of a
     positive-expectancy system, not a lucky streak. Note the equity builds in clusters: the system
     earns most during active London/NY hours and stands flat when the market chops.
   </div>

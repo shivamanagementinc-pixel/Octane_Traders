@@ -23,6 +23,16 @@ const scoreClass = (s) => (s >= 80 ? "score-hi" : s >= 70 ? "score-mid" : "score
 const statusClass = (st) => ({ hit_tp: "st-win", hit_sl: "st-loss", expired: "st-exp" }[st] || "st-open");
 const R = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "R";
 
+/* -------------------------------------------------------- backtest dataset */
+/* Historical trades from the walk-forward backtest (see backtest-data.js).
+   They're merged into the signal history so everything lives on one page. */
+function backtestSignals() {
+  const arr = (window.BACKTEST_TRADES || []).slice().sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return arr.map((t, i) => ({ ...t, id: "bt-" + i, source: "backtest", is_backtest: true }));
+}
+const showBacktest = () => $("filter-backtest").checked;
+
 /* --------------------------------------------------------------- demo data */
 function demoSignals() {
   const now = Date.now();
@@ -59,7 +69,9 @@ function filtered() {
   const side = $("filter-side").value;
   const minScore = Number($("filter-score").value || 0);
   const openOnly = $("filter-open").checked;
+  const bt = showBacktest();
   return state.signals.filter((s) =>
+    (bt || s.source !== "backtest") &&
     (!pair || s.pair === pair) &&
     (!side || s.side === side) &&
     (s.score >= minScore) &&
@@ -103,7 +115,9 @@ function computePerf(sigs) {
 }
 
 function renderPerf() {
-  const p = computePerf(state.signals);
+  const bt = showBacktest();
+  const scope = state.signals.filter((s) => bt || s.source !== "backtest");
+  const p = computePerf(scope);
   const pfTxt = p.pf === Infinity ? "∞" : p.pf.toFixed(2);
   $("perf-cards").innerHTML = [
     ["Win rate", (p.closed ? p.winRate.toFixed(0) + "%" : "—") + ` <small>${p.wins}W/${p.losses}L</small>`],
@@ -125,7 +139,7 @@ function renderPerf() {
         return `<tr><td class="pair-cell">${pair}</td><td class="num">${b.w}</td><td class="num">${b.l}</td><td class="num">${wr}</td><td class="num ${b.r >= 0 ? "c-win" : "c-loss"}">${R(b.r)}</td></tr>`;
       }).join("") + `</tbody></table>` || `<p class="empty">No closed trades yet.</p>`;
 
-  $("perf-by-score").innerHTML = `<h3>By quality score</h3><div class="note">Does a higher score actually win more?</div>` +
+  $("perf-by-score").innerHTML = `<h3>By quality score</h3><div class="note">Does a higher score actually win more?${bt ? " (incl. backtest)" : " (live only)"}</div>` +
     `<table class="mini"><thead><tr><th>Score</th><th>W</th><th>L</th><th>Win%</th></tr></thead><tbody>` +
     p.byScore.map((b) => `<tr><td>${b.label}</td><td class="num">${b.w}</td><td class="num">${b.l}</td><td class="num">${b.wr == null ? "—" : b.wr.toFixed(0) + "%"}</td></tr>`).join("") +
     `</tbody></table>`;
@@ -187,14 +201,94 @@ function render() {
       <td class="num">${s.rr}</td>
       <td class="muted">${s.htf_bias || "—"}</td>
       <td><span class="st ${statusClass(s.status)}">${s.status.replace("_", " ")}</span>
-          <button class="m m-send" data-id="${s.id}" title="Re-send to Telegram">📤</button></td>
+          ${s.is_backtest ? "" : `<button class="m m-send" data-id="${s.id}" title="Re-send to Telegram">📤</button>`}</td>
+      <td>${s.is_backtest
+        ? `<span class="pill-src src-bt">backtest</span>`
+        : `<span class="pill-src src-live">live</span>`}</td>
     </tr>`).join("");
   $("empty").classList.toggle("hidden", sigs.length > 0);
 
   renderPerf();
+  renderEquity();
 }
 
-/* -------------------------------------------------------------- outcomes */
+/* ------------------------------------------------------------------ equity */
+function buildEquitySVG(series) {
+  if (!series.length) return "";
+  const W = 900, H = 320, L = 50, R = 20, T = 26, B = 44;
+  const all = [];
+  series.forEach((s) => s.pts.forEach((v) => all.push(v)));
+  let ymin = Math.min(...all), ymax = Math.max(...all);
+  const pad = (ymax - ymin) * 0.08 || 5;
+  ymin -= pad; ymax += pad;
+  if (ymin > 0) ymin = 0;
+  const yp = (v) => T + (H - T - B) * (1 - (v - ymin) / (ymax - ymin));
+  const parts = [];
+  for (let g = 0; g <= Math.ceil(ymax) + 10; g += 10) {
+    if (g < ymin || g > ymax) continue;
+    parts.push(`<line x1="${L}" y1="${yp(g).toFixed(1)}" x2="${W - R}" y2="${yp(g).toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`);
+    parts.push(`<text x="${L - 8}" y="${(yp(g) + 4).toFixed(1)}" text-anchor="end" font-size="10" fill="#64748b">${g}R</text>`);
+  }
+  if (ymin <= 0 && ymax >= 0) {
+    parts.push(`<line x1="${L}" y1="${yp(0).toFixed(1)}" x2="${W - R}" y2="${yp(0).toFixed(1)}" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3"/>`);
+  }
+  let ly = 14;
+  series.forEach((s) => {
+    const n = s.pts.length;
+    const xx = (i) => L + (W - L - R) * (i / (n - 1 || 1));
+    const coords = s.pts.map((v, i) => `${xx(i).toFixed(1)},${yp(v).toFixed(1)}`).join(" ");
+    parts.push(`<polyline points="${coords}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`);
+    parts.push(`<line x1="${L}" y1="${ly}" x2="${L + 18}" y2="${ly}" stroke="${s.color}" stroke-width="2.5"/>`);
+    parts.push(`<text x="${L + 24}" y="${ly + 4}" font-size="11" fill="#0f172a">${s.label}</text>`);
+    ly += 16;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px">${parts.join("")}</svg>`;
+}
+
+function renderEquity() {
+  const bt = (window.BACKTEST_TRADES || []).filter((t) => t.status === "hit_tp" || t.status === "hit_sl");
+  if (!bt.length) { $("equity-cards").innerHTML = ""; $("equity-chart").innerHTML = ""; $("equity-note").innerHTML = ""; return; }
+
+  const w = bt.filter((t) => t.status === "hit_tp").length;
+  const l = bt.filter((t) => t.status === "hit_sl").length;
+  const totalR = bt.reduce((a, t) => a + (t.status === "hit_tp" ? Number(t.rr) : -1), 0);
+  const exp = bt.length ? totalR / bt.length : 0;
+  const wr = bt.length ? (w / bt.length) * 100 : 0;
+  const eq = window.BACKTEST_EQUITY || [];
+  let peak = eq.length ? eq[0][1] : 0, mdd = 0;
+  for (const p of eq) { peak = Math.max(peak, p[1]); mdd = Math.min(mdd, p[1] - peak); }
+
+  $("equity-cards").innerHTML = [
+    ["Backtest trades", bt.length + `<small>60-day walk-forward</small>`],
+    ["Win rate", wr.toFixed(0) + "%" + `<small>${w}W/${l}L</small>`],
+    ["Total P&L", R(totalR) + `<small>risk-units</small>`],
+    ["Expectancy", R(exp) + `<small>per trade</small>`],
+    ["Max drawdown", R(mdd) + `<small>give-back</small>`],
+  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  const series = [];
+  if (eq.length) {
+    series.push({ pts: eq.map((p) => p[1]), label: "Backtest (walk-forward)", color: "#059669" });
+  }
+  const live = state.signals
+    .filter((s) => !s.is_backtest && (s.status === "hit_tp" || s.status === "hit_sl"))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (live.length) {
+    let c = 0;
+    const lp = [0];
+    live.forEach((s) => { c += (s.status === "hit_tp" ? Number(s.rr) : -1); lp.push(c); });
+    series.push({ pts: lp, label: "Live (forward test)", color: "#2563eb" });
+  }
+
+  $("equity-chart").innerHTML = buildEquitySVG(series);
+  $("equity-note").innerHTML =
+    `<b>Reading this:</b> the green line is the system's historical walk-forward backtest —
+    each step up is a winning trade (+R:R), each step down a losing one (−1R). ` +
+    (live.length ? `The blue line is your live forward-testing so far, drawn on the same R scale —
+    watch whether it tracks the backtest's path.` : `Your live forward-testing line will appear here
+    once real signals start closing.`) +
+    ` Backtest trades are also in the history table above (tagged "backtest").`;
+}
 /* Manual TP/SL marking removed — outcomes are set ONLY by the scanner's
    automatic close-out (status is read-only for the browser). */
 async function resendSignal(id) {
@@ -229,7 +323,7 @@ function exportCSV() {
 /* ------------------------------------------------------------------- demo */
 function startDemo() {
   state.mode = "demo";
-  state.signals = demoSignals();
+  state.signals = demoSignals().concat(backtestSignals());
   $("mode-badge").textContent = "DEMO DATA";
   $("mode-badge").className = "badge badge-demo";
   $("foot-note").textContent = "Demo mode — connect Supabase to go live. (Sample data; not real signals.)";
@@ -245,7 +339,7 @@ async function startLive(config) {
       .from("signals").select("*").order("created_at", { ascending: false }).limit(500);
     if (error) throw error;
     state.mode = "live";
-    state.signals = data || [];
+    state.signals = (data || []).map((d) => ({ ...d, source: "live" })).concat(backtestSignals());
     $("mode-badge").textContent = "LIVE";
     $("mode-badge").className = "badge badge-live";
     $("foot-note").textContent = `Connected to ${config.url}`;
@@ -262,7 +356,7 @@ function subscribe() {
   state.channel = state.client
     .channel("signals-stream")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "signals" }, (payload) => {
-      state.signals.unshift(payload.new);
+      state.signals.unshift({ ...payload.new, source: "live" });
       render();
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "signals" }, (payload) => {
@@ -300,7 +394,7 @@ function bind() {
     $("modal").classList.add("hidden");
     startLive({ url, key });
   });
-  ["filter-pair", "filter-side", "filter-score", "filter-open"].forEach((id) =>
+  ["filter-pair", "filter-side", "filter-score", "filter-open", "filter-backtest"].forEach((id) =>
     $(id).addEventListener("change", render));
   $("csv-btn").addEventListener("click", exportCSV);
   document.querySelector("#table tbody").addEventListener("click", (e) => {

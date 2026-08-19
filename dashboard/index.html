@@ -6,6 +6,7 @@
 <title>SMC Signal Dashboard</title>
 <link rel="stylesheet" href="styles.css">
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="backtest-data.js"></script>
 <script defer src="app.js"></script>
 </head>
 <body>
@@ -16,7 +17,6 @@
       <p class="sub">Smart Money Concepts + Liquidity confluence · setups with ≥20 pips & quality ≥70</p>
     </div>
     <div class="header-actions">
-      <a href="backtest-report.html" class="btn btn-ghost">📊 Backtest report</a>
       <span id="mode-badge" class="badge badge-demo">DEMO DATA</span>
       <button id="connect-btn" class="btn">Connect Supabase</button>
     </div>
@@ -46,6 +46,7 @@
       </select>
     </label>
     <label class="check"><input type="checkbox" id="filter-open"> open only</label>
+    <label class="check"><input type="checkbox" id="filter-backtest" checked> show backtest</label>
     <span id="count" class="count"></span>
   </section>
 
@@ -69,12 +70,21 @@
         <tr>
           <th>Time</th><th>Pair</th><th>Side</th><th>Quality</th>
           <th>Entry</th><th>SL</th><th>TP</th><th>Potential</th>
-          <th>R:R</th><th>Bias</th><th>Status</th>
+          <th>R:R</th><th>Bias</th><th>Status</th><th>Source</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
     <p id="empty" class="empty hidden">No signals match the current filters.</p>
+  </section>
+
+  <section class="perf-wrap">
+    <div class="perf-head">
+      <h2>📈 Equity curve</h2>
+    </div>
+    <div id="equity-cards" class="stats"></div>
+    <div id="equity-chart"></div>
+    <p id="equity-note" class="note"></p>
   </section>
 </main>
 

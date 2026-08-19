@@ -111,6 +111,16 @@ table.mini tr:last-child td { border-bottom: none; }
 .c-win { color: var(--green); font-weight: 700; }
 .c-loss { color: var(--red); font-weight: 700; }
 
+/* source pill (live vs backtest) */
+.pill-src { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px; letter-spacing: .4px; }
+.src-bt { background: #2f260c; color: var(--amber); border: 1px solid #6b4c10; }
+.src-live { background: #0c2f1e; color: var(--green); border: 1px solid #166534; }
+
+/* equity chart section */
+#equity-chart { margin: 4px 0 10px; }
+#equity-chart svg { display: block; width: 100%; height: auto; }
+#equity-note { margin-top: 6px; }
+
 /* outcome buttons (resend only) */
 .marks { display: inline-flex; gap: 5px; }
 .m { font-size: 12px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 4px 7px; cursor: pointer; line-height: 1; margin-left: 6px; vertical-align: middle; }
