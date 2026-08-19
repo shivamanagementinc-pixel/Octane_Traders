@@ -20,24 +20,22 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install pyinstaller MetaTrader5 tzdata requests
+        run: pip install pyinstaller MetaTrader5 tzdata requests
 
-      - name: Build single-file exe
+      - name: Build exe
         working-directory: copier
-        run: |
-          pyinstaller --onefile --console --name octane-copier ^
-            --collect-all MetaTrader5 ^
-            --collect-all tzdata ^
-            --hidden-import config ^
-            --hidden-import lot_calculator ^
-            copier.py
+        run: pyinstaller --noconfirm --onefile --console --name octane-copier --collect-all MetaTrader5 --hidden-import config --hidden-import lot_calculator copier.py
 
-      - name: Bundle runtime config files
+      - name: List build output
+        working-directory: copier
+        run: Get-ChildItem -Recurse dist | Select-Object FullName, Length
+
+      - name: Bundle runtime files
         shell: pwsh
         run: |
-          Copy-Item copier/copier.ini.example copier/dist/copier.ini.example
-          Copy-Item copier/config_local.py.example copier/dist/config_local.py.example
+          New-Item -ItemType Directory -Force -Path copier/dist | Out-Null
+          if (Test-Path copier/copier.ini.example) { Copy-Item copier/copier.ini.example copier/dist/ }
+          if (Test-Path copier/config_local.py.example) { Copy-Item copier/config_local.py.example copier/dist/ }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -45,6 +43,5 @@ jobs:
           name: octane-copier-windows
           path: |
             copier/dist/octane-copier.exe
-            copier/dist/copier.ini.example
-            copier/dist/config_local.py.example
+            copier/dist/*.example
           if-no-files-found: error
