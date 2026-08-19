@@ -127,12 +127,16 @@ def signal(asset, rows15, rows5, cfg):
     else:
         return None
     if sl <= 0 or tp <= 0: return None
-    pts = abs(price - sl)
+    # Convert to PIPS (not raw price units) — the Supabase column is
+    # numeric(10,2), so raw units like 0.00044 would round to 0.00.
+    pip_size = ASSETS[asset][1]
+    pips_sl = abs(price - sl) / pip_size
+    pips_tp = abs(price - tp) / pip_size
     return {
         "asset": asset, "side": side, "price": price, "sl": sl, "tp": tp,
         "rsi": round(r,1), "atr": round(a,5), "bias": bdir,
         "rr": round(cfg["tp_atr"]/cfg["sl_atr"],2),
-        "pips_sl": round(pts,4), "pips_tp": round(abs(price-tp),4),
+        "pips_sl": round(pips_sl, 1), "pips_tp": round(pips_tp, 1),
         "ts": rows5[-1][0],
     }
 

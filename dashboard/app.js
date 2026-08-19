@@ -248,7 +248,7 @@ function render() {
       <td class="num">${fmtPrice(s.pair, s.price)}</td>
       <td class="num muted">${fmtPrice(s.pair, s.sl)}</td>
       <td class="num muted">${fmtPrice(s.pair, s.tp)}</td>
-      <td class="num">+${s.pips_tp}${(s.pair === "XAUUSD" || ["SPX500","NAS100","US30"].includes(s.pair)) ? "" : "p"}</td>
+      <td class="num">+${s.pips_tp}${["SPX500","NAS100","US30"].includes(s.pair) ? "pts" : (s.pair === "XAUUSD" ? "$" : "p")}</td>
       <td class="num">${s.rr}</td>
       <td class="muted">${s.htf_bias || "—"}</td>
       <td><span class="st ${statusClass(s.status)}">${s.status.replace("_", " ")}</span>

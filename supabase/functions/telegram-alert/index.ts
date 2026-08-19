@@ -157,8 +157,14 @@ Deno.serve(async (req) => {
     if (!recent) text = signalText(rec);
   } else if (type === "UPDATE") {
     if (rec.resend === true && old.resend !== true) {
-      // 📤 resend clicked in the dashboard
-      text = "🔄 RESEND\n" + signalText(rec);
+      // 📤 resend clicked in the dashboard — show the trade WITH its outcome
+      // so a completed trade isn't mistaken for a live signal.
+      const statusLine =
+        rec.status === "hit_tp" ? "✅ OUTCOME: HIT TP"
+        : rec.status === "hit_sl" ? "❌ OUTCOME: HIT SL"
+        : rec.status === "expired" ? "⏳ OUTCOME: EXPIRED"
+        : "🟢 STATUS: OPEN";
+      text = "🔄 RESEND\n" + signalText(rec) + "\n" + statusLine;
       await clearResend(rec.id);
     } else if (
       rec.status &&
