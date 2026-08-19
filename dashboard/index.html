@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SMC Signal Dashboard</title>
+<title>Octane Traders</title>
 <link rel="stylesheet" href="styles.css">
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="backtest-data.js"></script>
+<script defer src="scalp-backtest-data.js"></script>
 <script defer src="app.js"></script>
 </head>
 <body>
 <header>
   <div class="wrap header-inner">
     <div>
-      <h1>◉ SMC Signal Dashboard</h1>
+      <h1>◉ Octane Traders</h1>
       <p class="sub">Smart Money Concepts + Liquidity confluence · setups with ≥20 pips & quality ≥70</p>
     </div>
     <div class="header-actions">
@@ -24,6 +25,17 @@
 </header>
 
 <main class="wrap">
+  <nav class="tabs">
+    <button class="tab active" data-strategy="smc">
+      <span class="tab-name">Swing</span>
+      <span class="tab-sub">SMC · +0.62R/trade</span>
+    </button>
+    <button class="tab" data-strategy="scalp">
+      <span class="tab-name">Aggressive Scalp</span>
+      <span class="tab-sub">5m momentum · 61% win · 1R</span>
+    </button>
+  </nav>
+
   <section id="stats" class="stats"></section>
 
   <section class="controls">

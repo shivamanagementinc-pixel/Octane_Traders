@@ -24,14 +24,21 @@ const statusClass = (st) => ({ hit_tp: "st-win", hit_sl: "st-loss", expired: "st
 const R = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "R";
 
 /* -------------------------------------------------------- backtest dataset */
-/* Historical trades from the walk-forward backtest (see backtest-data.js).
-   They're merged into the signal history so everything lives on one page. */
+/* Historical trades from the walk-forward backtests (see backtest-data.js and
+   scalp-backtest-data.js). Merged into the signal history so everything lives
+   on one page, tagged by strategy. */
 function backtestSignals() {
   const arr = (window.BACKTEST_TRADES || []).slice().sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at));
-  return arr.map((t, i) => ({ ...t, id: "bt-" + i, source: "backtest", is_backtest: true }));
+  return arr.map((t, i) => ({ ...t, id: "bt-" + i, source: "backtest", is_backtest: true, strategy: "smc" }));
+}
+function scalpBacktestSignals() {
+  const arr = (window.SCALP_BACKTEST_TRADES || []).slice().sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return arr.map((t, i) => ({ ...t, id: "sc-" + i, source: "backtest", is_backtest: true, strategy: "scalp" }));
 }
 const showBacktest = () => $("filter-backtest").checked;
+const strat = (s) => s.strategy || "smc";
 
 /* --------------------------------------------------------------- demo data */
 function demoSignals() {
@@ -55,7 +62,7 @@ function demoSignals() {
 }
 
 /* ------------------------------------------------------------------ state */
-const state = { signals: [], mode: "demo", client: null, channel: null };
+const state = { signals: [], mode: "demo", client: null, channel: null, strategy: "smc" };
 
 function getConfig() {
   const url = localStorage.getItem(LS_URL);
@@ -71,10 +78,11 @@ function filtered() {
   const openOnly = $("filter-open").checked;
   const bt = showBacktest();
   return state.signals.filter((s) =>
+    strat(s) === state.strategy &&
     (bt || s.source !== "backtest") &&
     (!pair || s.pair === pair) &&
     (!side || s.side === side) &&
-    (s.score >= minScore) &&
+    (state.strategy === "scalp" || s.score >= minScore) &&
     (!openOnly || s.status === "open")
   );
 }
@@ -116,7 +124,7 @@ function computePerf(sigs) {
 
 function renderPerf() {
   const bt = showBacktest();
-  const scope = state.signals.filter((s) => bt || s.source !== "backtest");
+  const scope = state.signals.filter((s) => strat(s) === state.strategy && (bt || s.source !== "backtest"));
   const p = computePerf(scope);
   const pfTxt = p.pf === Infinity ? "∞" : p.pf.toFixed(2);
   $("perf-cards").innerHTML = [
@@ -147,15 +155,28 @@ function renderPerf() {
 
 /* ------------------------------------------------------------------ render */
 function render() {
-  const all = state.signals;
+  const all = state.signals.filter((s) => strat(s) === state.strategy);
   const sigs = filtered();
   $("count").textContent = `${sigs.length} signal${sigs.length === 1 ? "" : "s"}`;
+  // hide the quality-score filter on the scalp tab (scalps have no SMC score)
+  const scoreFilter = $("filter-score").closest("label");
+  if (scoreFilter) scoreFilter.style.display = state.strategy === "scalp" ? "none" : "";
 
   const open = all.filter((s) => s.status === "open").length;
   const hi = all.filter((s) => s.score >= 80).length;
   const wins = all.filter((s) => s.status === "hit_tp").length;
   const avg = all.length ? (all.reduce((a, s) => a + s.score, 0) / all.length).toFixed(1) : "—";
-  $("stats").innerHTML = [
+  const decided = all.filter((s) => s.status === "hit_tp" || s.status === "hit_sl").length;
+  const wr = decided ? (wins / decided * 100).toFixed(0) + "%" : "—";
+  const isScalp = state.strategy === "scalp";
+  $("stats").innerHTML = isScalp ? [
+    ["Signals", all.length],
+    ["Open", open],
+    ["Win rate", wr + `<small>${wins}W / ${decided - wins}L</small>`],
+    ["Target", "1R" + `<small>1×ATR stop & target</small>`],
+    ["Wins", wins],
+  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")
+  : [
     ["Signals", all.length],
     ["Open", open],
     ["★ ≥80", hi],
@@ -169,12 +190,14 @@ function render() {
     pairs.map((p) => `<option ${p === cur ? "selected" : ""}>${p}</option>`).join("");
 
   const stars = sigs.filter((s) => s.score >= 80 && s.status === "open");
-  const featured = stars.length ? stars.slice(0, 6) : sigs.filter((s) => s.status === "open").slice(0, 3);
+  const featured = isScalp
+    ? sigs.filter((s) => s.status === "open").slice(0, 6)
+    : (stars.length ? stars.slice(0, 6) : sigs.filter((s) => s.status === "open").slice(0, 3));
   $("featured").innerHTML = featured.map((s) => `
-    <div class="card ${s.score >= 80 ? "star" : ""}">
+    <div class="card ${!isScalp && s.score >= 80 ? "star" : ""}">
       <div class="top">
         <span class="pair">${s.pair} <span class="side-${s.side.toLowerCase()}">${s.side}</span></span>
-        <span class="score-pill ${scoreClass(s.score)}">${s.score}</span>
+        <span class="score-pill ${isScalp ? "score-hi" : scoreClass(s.score)}">${isScalp ? "1R" : s.score}</span>
       </div>
       <div class="levels">
         <div class="lv"><div class="k">Entry</div><div class="v">${fmtPrice(s.pair, s.price)}</div></div>
@@ -193,11 +216,13 @@ function render() {
       <td class="muted">${fmtTime(s.created_at)}</td>
       <td class="pair-cell">${s.pair}</td>
       <td class="${s.side === "LONG" ? "side-long" : "side-short"}">${s.side}</td>
-      <td><span class="score-pill ${scoreClass(s.score)}">${s.score}</span></td>
+      <td>${isScalp
+        ? `<span class="score-pill score-hi">${s.deal_pos != null ? "RSI " + s.deal_pos : "1R"}</span>`
+        : `<span class="score-pill ${scoreClass(s.score)}">${s.score ?? "—"}</span>`}</td>
       <td class="num">${fmtPrice(s.pair, s.price)}</td>
       <td class="num muted">${fmtPrice(s.pair, s.sl)}</td>
       <td class="num muted">${fmtPrice(s.pair, s.tp)}</td>
-      <td class="num">+${s.pips_tp}${s.pair === "XAUUSD" ? "$" : "p"}</td>
+      <td class="num">+${s.pips_tp}${(s.pair === "XAUUSD" || ["SPX500","NAS100","US30"].includes(s.pair)) ? "" : "p"}</td>
       <td class="num">${s.rr}</td>
       <td class="muted">${s.htf_bias || "—"}</td>
       <td><span class="st ${statusClass(s.status)}">${s.status.replace("_", " ")}</span>
@@ -246,7 +271,10 @@ function buildEquitySVG(series) {
 }
 
 function renderEquity() {
-  const bt = (window.BACKTEST_TRADES || []).filter((t) => t.status === "hit_tp" || t.status === "hit_sl");
+  const isScalp = state.strategy === "scalp";
+  const eq = isScalp ? (window.SCALP_BACKTEST_EQUITY || []) : (window.BACKTEST_EQUITY || []);
+  const btTrades = isScalp ? (window.SCALP_BACKTEST_TRADES || []) : (window.BACKTEST_TRADES || []);
+  const bt = btTrades.filter((t) => t.status === "hit_tp" || t.status === "hit_sl");
   if (!bt.length) { $("equity-cards").innerHTML = ""; $("equity-chart").innerHTML = ""; $("equity-note").innerHTML = ""; return; }
 
   const w = bt.filter((t) => t.status === "hit_tp").length;
@@ -254,7 +282,6 @@ function renderEquity() {
   const totalR = bt.reduce((a, t) => a + (t.status === "hit_tp" ? Number(t.rr) : -1), 0);
   const exp = bt.length ? totalR / bt.length : 0;
   const wr = bt.length ? (w / bt.length) * 100 : 0;
-  const eq = window.BACKTEST_EQUITY || [];
   let peak = eq.length ? eq[0][1] : 0, mdd = 0;
   for (const p of eq) { peak = Math.max(peak, p[1]); mdd = Math.min(mdd, p[1] - peak); }
 
@@ -268,10 +295,10 @@ function renderEquity() {
 
   const series = [];
   if (eq.length) {
-    series.push({ pts: eq.map((p) => p[1]), label: "Backtest (walk-forward)", color: "#059669" });
+    series.push({ pts: eq.map((p) => p[1]), label: isScalp ? "Scalp backtest (1R)" : "Backtest (walk-forward)", color: "#059669" });
   }
   const live = state.signals
-    .filter((s) => !s.is_backtest && (s.status === "hit_tp" || s.status === "hit_sl"))
+    .filter((s) => !s.is_backtest && strat(s) === state.strategy && (s.status === "hit_tp" || s.status === "hit_sl"))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (live.length) {
     let c = 0;
@@ -282,11 +309,10 @@ function renderEquity() {
 
   $("equity-chart").innerHTML = buildEquitySVG(series);
   $("equity-note").innerHTML =
-    `<b>Reading this:</b> the green line is the system's historical walk-forward backtest —
+    `<b>Reading this:</b> the green line is the historical walk-forward backtest —
     each step up is a winning trade (+R:R), each step down a losing one (−1R). ` +
-    (live.length ? `The blue line is your live forward-testing so far, drawn on the same R scale —
-    watch whether it tracks the backtest's path.` : `Your live forward-testing line will appear here
-    once real signals start closing.`) +
+    (live.length ? `The blue line is your live forward-testing so far, on the same R scale.` :
+    `Your live forward-testing line will appear here once real signals start closing.`) +
     ` Backtest trades are also in the history table above (tagged "backtest").`;
 }
 /* Manual TP/SL marking removed — outcomes are set ONLY by the scanner's
@@ -323,7 +349,7 @@ function exportCSV() {
 /* ------------------------------------------------------------------- demo */
 function startDemo() {
   state.mode = "demo";
-  state.signals = demoSignals().concat(backtestSignals());
+  state.signals = demoSignals().concat(backtestSignals()).concat(scalpBacktestSignals());
   $("mode-badge").textContent = "DEMO DATA";
   $("mode-badge").className = "badge badge-demo";
   $("foot-note").textContent = "Demo mode — connect Supabase to go live. (Sample data; not real signals.)";
@@ -339,7 +365,7 @@ async function startLive(config) {
       .from("signals").select("*").order("created_at", { ascending: false }).limit(500);
     if (error) throw error;
     state.mode = "live";
-    state.signals = (data || []).map((d) => ({ ...d, source: "live" })).concat(backtestSignals());
+    state.signals = (data || []).map((d) => ({ ...d, source: "live" })).concat(backtestSignals()).concat(scalpBacktestSignals());
     $("mode-badge").textContent = "LIVE";
     $("mode-badge").className = "badge badge-live";
     $("foot-note").textContent = `Connected to ${config.url}`;
@@ -396,6 +422,14 @@ function bind() {
   });
   ["filter-pair", "filter-side", "filter-score", "filter-open", "filter-backtest"].forEach((id) =>
     $(id).addEventListener("change", render));
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.strategy = btn.dataset.strategy;
+      render();
+    });
+  });
   $("csv-btn").addEventListener("click", exportCSV);
   document.querySelector("#table tbody").addEventListener("click", (e) => {
     const b = e.target.closest(".m-send");

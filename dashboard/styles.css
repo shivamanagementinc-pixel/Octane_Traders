@@ -40,6 +40,15 @@ h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
 .btn-primary { background: var(--accent); border-color: var(--accent); }
 .btn-ghost { background: transparent; }
 
+/* strategy tabs */
+.tabs { display: flex; gap: 10px; margin: 20px 0 0; }
+.tab { flex: 1; max-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+       padding: 12px 16px; cursor: pointer; text-align: left; color: var(--text); transition: border-color .15s, background .15s; }
+.tab:hover { border-color: var(--accent); }
+.tab.active { border-color: var(--accent); background: linear-gradient(180deg, #1a2440, var(--panel2)); box-shadow: 0 0 0 1px var(--accent) inset; }
+.tab-name { display: block; font-size: 14px; font-weight: 700; }
+.tab-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+
 /* stats */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 20px 0; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
