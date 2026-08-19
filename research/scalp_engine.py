@@ -282,11 +282,13 @@ def close_out(cfg):
 def live_scan(cfg):
     tz = ZoneInfo("America/Toronto")
     now = dt.datetime.now(tz)
+    # Housekeeping always runs: auto-close-out of open scalp signals must keep
+    # tracking TP/SL 24/5, even when new-signal scanning is paused.
+    close_out(cfg)
     if not any(lo <= now.hour < hi for lo, hi in cfg["sessions"]):
-        print(f"   [session] outside {cfg['sessions']} ET — skipping (low liquidity)")
+        print(f"   [session] outside {cfg['sessions']} ET — no new scalp signals (low liquidity)")
         return 0
     print(f"=== SCALP SCAN {now.strftime('%Y-%m-%d %H:%M:%S %Z')} (TP={cfg['tp_atr']}R) ===")
-    close_out(cfg)
     found = 0
     for asset in ASSETS:
         sym,_ = ASSETS[asset]

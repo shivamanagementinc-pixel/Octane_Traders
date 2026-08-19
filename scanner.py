@@ -598,16 +598,27 @@ def resend_telegram(cfg):
         print(f"   [resend] fetch error: {e}")
         return
     for row in rows:
-        sig = {
-            "pair": row["pair"], "side": row["side"], "score": row["score"],
-            "price": float(row["price"]), "sl": float(row["sl"]),
-            "tp": float(row["tp"]), "pips_tp": float(row["pips_tp"]),
-            "rr": float(row["rr"]), "bias": row.get("htf_bias"),
-            "flow": "up" if row["side"] == "LONG" else "down",
-            "reasons": row.get("reasons") or [],
-        }
-        t = send_telegram(telegram_text(sig), cfg)
-        print(f"   [resend] {row['pair']} {row['side']} -> telegram {t}")
+        strat = row.get("strategy") or "smc"
+        pair, side = row["pair"], row["side"]
+        if strat == "scalp":
+            text = (
+                "\U0001F504 RESEND\n"
+                f"\U0001F3AF {pair} {side} — SCALP (target {row.get('rr')}R)\n"
+                f"Entry {row.get('price')} | SL {row.get('sl')} | TP {row.get('tp')}\n"
+                f"5m momentum pullback · {row.get('htf_bias') or '?'} trend"
+            )
+        else:
+            sig = {
+                "pair": pair, "side": side, "score": row.get("score"),
+                "price": float(row["price"]), "sl": float(row["sl"]),
+                "tp": float(row["tp"]), "pips_tp": float(row["pips_tp"]),
+                "rr": float(row["rr"]), "bias": row.get("htf_bias"),
+                "flow": "up" if side == "LONG" else "down",
+                "reasons": row.get("reasons") or [],
+            }
+            text = "\U0001F504 RESEND\n" + telegram_text(sig)
+        t = send_telegram(text, cfg)
+        print(f"   [resend] {pair} {side} ({strat}) -> telegram {t}")
         patch = urllib.request.Request(
             f"{base}/signals?id=eq.{row['id']}",
             data=json.dumps({"resend": False}).encode(),
@@ -672,19 +683,22 @@ def in_session(cfg):
 
 
 def run(cfg, seen):
-    if in_blackout(cfg):
-        print(f"   [blackout] {cfg['blackout_start']}–{cfg['blackout_end']} "
-              f"{cfg.get('blackout_tz', '')} — skipping scan (high-spread window)")
-        return 0
-    if not in_session(cfg):
-        print(f"   [session] outside {cfg.get('session_start')}–{cfg.get('session_end')} "
-              f"{cfg.get('session_tz', '')} — skipping (off-hours chop)")
-        return 0
     now = dt.datetime.now()
     print(f"\n=== SMC scan {now.strftime('%Y-%m-%d %H:%M:%S %Z')} "
           f"(min {cfg['min_pips']} pips, score {cfg['min_score']}-{cfg['max_score']}) ===")
+    # Housekeeping ALWAYS runs (every 5 min), even outside trading hours —
+    # otherwise dashboard resend requests and TP/SL tracking would stall all
+    # evening. Only NEW-signal scanning is gated by session/blackout below.
     close_out_signals(cfg)
     resend_telegram(cfg)
+    if in_blackout(cfg):
+        print(f"   [blackout] {cfg['blackout_start']}–{cfg['blackout_end']} "
+              f"{cfg.get('blackout_tz', '')} — no new signals (high-spread window)")
+        return 0
+    if not in_session(cfg):
+        print(f"   [session] outside {cfg.get('session_start')}–{cfg.get('session_end')} "
+              f"{cfg.get('session_tz', '')} — no new signals (off-hours chop)")
+        return 0
     found = 0
     for pair in cfg["pairs"]:
         sym, pip = INSTRUMENTS[pair]
