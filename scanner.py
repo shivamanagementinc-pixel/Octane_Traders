@@ -56,7 +56,8 @@ INSTRUMENTS = {
     "AUDJPY": ("AUDJPY=X", 0.01),
     "CHFJPY": ("CHFJPY=X", 0.01),
     "CADJPY": ("CADJPY=X", 0.01),
-    "XAUUSD": ("GC=F", 1.0),   # gold: 1 "point" = $1
+    "XAUUSD": ("PAXG-USD", 1.0),   # gold SPOT proxy (tokenized gold tracks spot;
+                                   # GC=F futures can diverge $50+ from broker spot)
 }
 
 # Default universe — the 4 pairs that showed a real edge in the 60-day backtest
