@@ -86,7 +86,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "2.3"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "2.4"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -421,15 +421,31 @@ def place_pending_order(actual_sym, side, entry_price, volume, sl, tp, comment):
         "expiration": exp,
     }
 
-    # try WITH SL/TP first
+    # try WITH SL/TP + expiration first
     result = mt5.order_send(dict(base))
     if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
         return {"ok": True, "order": result.order, "needs_sltp_after_fill": False}
 
-    # fallback: bare limit order (attach SL/TP after it fills)
+    # some brokers reject `expiration` ("Invalid expiration" = retcode 10023)
+    # -> retry as a GTC limit (no expiry) and enforce the 30-min window
+    # ourselves in the copier's reconcile step.
+    rc = result.retcode if result is not None else -1
+    if rc == 10023:
+        base.pop("expiration", None)
+        base["type_time"] = mt5.ORDER_TIME_GTC
+        result = mt5.order_send(dict(base))
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            print("      [pending] broker rejected expiration -> placed GTC limit "
+                  "(copier enforces the 30-min window)")
+            return {"ok": True, "order": result.order, "needs_sltp_after_fill": False}
+
+    # fallback: bare limit order (attach SL/TP after it fills); also drop the
+    # expiration since this broker path already implies a picky symbol.
     bare = dict(base)
     bare.pop("sl", None)
     bare.pop("tp", None)
+    bare.pop("expiration", None)
+    bare["type_time"] = mt5.ORDER_TIME_GTC
     result2 = mt5.order_send(bare)
     if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"      [pending] limit placed WITHOUT SL/TP (will attach on fill)")
@@ -709,7 +725,12 @@ def run_once(watermark):
     except Exception:
         open_pos, pend_pos = [], []
 
-    # 6a) pending orders: did they fill (-> position) or expire (-> gone)?
+    # 6a) pending orders: did they fill (-> position), expire (broker TTL), or
+    #     outlive our window (GTC fallback -> we cancel them ourselves)?
+    try:
+        ttl_min = float(_cfg("PENDING_TTL_MIN") or PENDING_TTL_MIN)
+    except (TypeError, ValueError):
+        ttl_min = PENDING_TTL_MIN
     for p in pend_pos:
         cred = cred_by_acc.get(p["account_id"])
         if not cred:
@@ -719,8 +740,24 @@ def run_once(watermark):
             continue
         order = mt5.orders_get(ticket=p["ticket"]) if p["ticket"] else []
         if order:
+            # still pending. If it's a GTC order (no broker expiry) that has
+            # outlived our window, cancel it ourselves.
+            try:
+                opened = dt.datetime.fromisoformat(str(p["opened_at"]).replace("Z", "+00:00"))
+                age_min = (dt.datetime.now(dt.timezone.utc) - opened).total_seconds() / 60.0
+            except Exception:
+                age_min = 0
+            if age_min > ttl_min:
+                r = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": p["ticket"]})
+                ok = r is not None and r.retcode == mt5.TRADE_RETCODE_DONE
+                sb_update(f"positions?id=eq.{p['id']}",
+                          {"status": "expired",
+                           "closed_at": dt.datetime.now(dt.timezone.utc).isoformat()})
+                print(f"   [reconcile] pending {p['pair']} expired by copier "
+                      f"({int(age_min)}m > {int(ttl_min)}m) "
+                      f"{'— cancelled' if ok else '— cancel failed'}")
             mt5.shutdown()
-            continue                       # still pending — leave it
+            continue
         # order is gone: either filled or expired
         actual_sym = symbol_map.get(p["pair"])
         allpos = mt5.positions_get() or []
