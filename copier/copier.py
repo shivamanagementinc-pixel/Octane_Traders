@@ -158,7 +158,15 @@ def mt5_account(sym_map, cred):
     if server:
         kwargs["server"] = server
     if not mt5.initialize(**kwargs):
-        print(f"   [!] init failed for login {login}: {mt5.last_error()}")
+        err = mt5.last_error()
+        print(f"   [!] init failed for login {login}: {err}")
+        if err and err[0] == -10005:
+            print("   [hint] 'IPC timeout' = the copier can't reach the MT5 terminal. Fix:")
+            print("          1. Run MT5 and this exe with the SAME Windows privileges "
+                  "(both as admin, or both normal)")
+            print("          2. Make sure MT5 finished updating and is fully logged in")
+            print("          3. Close any OTHER MT5 terminals / MetaEditor instances")
+            print("          4. Restart MT5, then run this exe again")
         return None
     suffix = cred.get("symbol_suffix") or ""
     actual = {}
@@ -271,7 +279,7 @@ def run_once(watermark):
     try:
         wm = watermark.isoformat().replace("+00:00", "Z")
         sigs = sb_select(f"signals?status=eq.open&created_at=gt.{wm}&order=created_at.asc"
-                         "&select=id,pair,side,sl,tp,pips_sl,strategy")
+                         "&select=id,pair,side,sl,tp,pips_sl,strategy,created_at")
     except Exception as e:
         print(f"   [!] signals read failed: {e}")
         sigs = []
