@@ -1,24 +1,5 @@
 #!/usr/bin/env python3
-"""
-Octane Traders — broker-native scalp engine (Option A).
-
-Generates scalp signals from the broker's OWN candles via MT5's
-`copy_rates_from_pos`. Because signals are computed on the exact CFD/FX prices
-the account trades, there is no futures-vs-CFD mismatch and no Yahoo dependency
-for execution — the old "index price variance" problem disappears entirely.
-
-The strategy logic is identical to research/scalp_engine.py (5m momentum
-pullback in the 15m trend), only the data source changed:
-
-  * 15m bias     : EMA9 vs EMA21  (up / down / flat)
-  * entry trigger: 5m RSI(14) pullback in the 15m direction
-  * stop / target: 1 x ATR(14, 5m) / 1.5 x ATR(14, 5m)
-  * min target   : 5 pips (FX) / 30 points (indices)
-
-Pure signal generation — no Supabase, no orders. The copier decides what to do
-with each returned dict (size + execute + record). This clean split is what
-lets Stage 2 move the same module to a cloud signal server unchanged.
-"""
+"""Octane Traders - broker-native scalp engine (Option A)."""
 
 try:
     import MetaTrader5 as mt5
@@ -28,7 +9,6 @@ except ImportError:
 
 from config import SYMBOL_MAP
 
-# ------------------------------------------------------------------ universe
 SCALP_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD",
                   "SPX500", "NAS100", "US30"]
 
@@ -40,7 +20,6 @@ PIP_SIZE = {
 
 IS_INDEX = {"SPX500", "NAS100", "US30"}
 
-# strategy parameters (mirror research/scalp_engine.py)
 RSI_N = 14
 ATR_N = 14
 RSI_BUY = 38.0
@@ -53,7 +32,6 @@ LOOKBACK_15M = 120
 LOOKBACK_5M = 120
 
 
-# ------------------------------------------------------------------ pure math
 def ema(vals, n):
     if not vals:
         return []
@@ -102,10 +80,7 @@ def bias_15m(rows15):
     return "flat", 0.0
 
 
-# ------------------------------------------------------------------ signal
 def signal_from_rates(asset, rows15, rows5):
-    """Pure, testable core (no MT5). rows are (time, open, high, low, close).
-    Returns a signal dict or None."""
     if len(rows15) < 60 or len(rows5) < ATR_N + 2:
         return None
     bdir, _ = bias_15m(rows15)
@@ -150,7 +125,6 @@ def signal_from_rates(asset, rows15, rows5):
     }
 
 
-# ------------------------------------------------------------------ MT5 glue
 def _rows(rates):
     if rates is None:
         return []
@@ -163,8 +137,6 @@ def _rows(rates):
 
 
 def compute_signals(symbol_map=None):
-    """Pull 15m + 5m candles from the CURRENT MT5 connection for every symbol
-    in the scalp universe and return a list of broker-native signal dicts."""
     if not MT5_AVAILABLE:
         return []
     mapping = symbol_map or SYMBOL_MAP
