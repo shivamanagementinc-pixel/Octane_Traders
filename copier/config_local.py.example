@@ -1,0 +1,38 @@
+# Octane Traders — broker overrides (optional)
+# Copy this file to config_local.py (same folder as octane-copier.exe) and edit.
+# It OVERRIDES the built-in config.py WITHOUT rebuilding the exe.
+#
+# Edit these for YOUR broker, then restart the copier.
+
+# USD value of one unit (pip / $ / point) per 1.0 lot.
+# VERIFY against MT5: right-click a symbol -> Specification -> "Tick value".
+USD_PER_UNIT_LOT = {
+    "EURUSD": 10.0,
+    "GBPUSD": 10.0,
+    "AUDUSD": 10.0,
+    "NZDUSD": 10.0,
+    "USDCHF": 10.5,
+    "USDJPY": 6.5,
+    "USDCAD": 7.2,
+    "XAUUSD": 100.0,
+    "XAGUSD": 50.0,
+    "SPX500": 1.0,
+    "NAS100": 1.0,
+    "US30":   1.0,
+}
+
+# Our internal name -> YOUR broker's MT5 symbol (check Market Watch).
+SYMBOL_MAP = {
+    "EURUSD": "EURUSD",
+    "GBPUSD": "GBPUSD",
+    "AUDUSD": "AUDUSD",
+    "NZDUSD": "NZDUSD",
+    "USDCAD": "USDCAD",
+    "USDCHF": "USDCHF",
+    "USDJPY": "USDJPY",
+    "XAUUSD": "XAUUSD",
+    "XAGUSD": "XAGUSD",
+    "SPX500": "SPCUSD.c",   # S&P 500
+    "NAS100": "NACUSD.c",   # Nasdaq 100
+    "US30":   "DJCUSD.c",   # Dow Jones 30
+}

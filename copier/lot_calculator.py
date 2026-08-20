@@ -22,13 +22,15 @@ def floor_to_step(lots, step=LOT_STEP):
     return float(d)
 
 
-def size_lots(balance, risk_pct, stop_units, pair):
+def size_lots(balance, risk_pct, stop_units, pair, unit_lookup=None):
     """Return the lot size for a trade, or 0.0 if it cannot be sized safely.
 
     balance     — account balance (float)
     risk_pct    — % of balance to risk per trade (0.5 = 0.5%)
     stop_units  — stop distance in the pair's unit (pips / $ / points)
-    pair        — e.g. "EURUSD" (looks up USD-per-unit-per-lot)
+    pair        — e.g. "EURUSD"
+    unit_lookup — optional dict override of USD-per-unit-per-lot (used by the
+                  copier so config_local.py overrides reach sizing)
     """
     if stop_units is None or stop_units <= 0:
         return 0.0                      # can't size without a stop -> skip
@@ -36,7 +38,8 @@ def size_lots(balance, risk_pct, stop_units, pair):
         return 0.0
     if risk_pct is None or risk_pct <= 0:
         risk_pct = DEFAULT_RISK_PCT
-    unit_value = USD_PER_UNIT_LOT.get(pair)
+    lookup = unit_lookup if unit_lookup is not None else USD_PER_UNIT_LOT
+    unit_value = lookup.get(pair)
     if not unit_value:
         return 0.0                      # unknown symbol -> don't guess
     risk_usd = float(balance) * (float(risk_pct) / 100.0)

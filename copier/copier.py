@@ -22,6 +22,7 @@ Requires: pip install MetaTrader5 requests
 """
 
 import argparse
+import configparser
 import json
 import os
 import sys
@@ -40,11 +41,50 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-from config import SYMBOL_MAP, MAGIC, DEFAULT_RISK_PCT
+from config import SYMBOL_MAP, MAGIC, DEFAULT_RISK_PCT, USD_PER_UNIT_LOT as _BUILTIN_UNITS
 from lot_calculator import size_lots
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+# ------------------------------------------------------------------ config
+def _app_dir():
+    if getattr(sys, "frozen", False):        # running as a PyInstaller .exe
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+# Allow runtime overrides without rebuilding the exe: if a config_local.py
+# sits next to the exe, its SYMBOL_MAP / USD_PER_UNIT_LOT etc. win.
+try:
+    import importlib.util as _ilu
+    _lp = os.path.join(_app_dir(), "config_local.py")
+    if os.path.exists(_lp):
+        _spec = _ilu.spec_from_file_location("config_local", _lp)
+        _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        for _name in ("SYMBOL_MAP", "USD_PER_UNIT_LOT", "MAGIC",
+                      "MIN_LOT", "MAX_LOT", "LOT_STEP", "DEFAULT_RISK_PCT"):
+            if hasattr(_mod, _name):
+                globals()[_name] = getattr(_mod, _name)
+except Exception:
+    pass
+
+
+def _load_ini():
+    """Read copier.ini (same folder as the exe/script). Env vars take priority."""
+    ini = {}
+    p = os.path.join(_app_dir(), "copier.ini")
+    if os.path.exists(p):
+        cp = configparser.ConfigParser()
+        cp.read(p)
+        if cp.has_section("copier"):
+            ini = dict(cp.items("copier"))
+    return ini
+
+INI = _load_ini()
+
+def _cfg(key):
+    return os.environ.get(key) or INI.get(key.lower()) or ""
+
+SUPABASE_URL = _cfg("SUPABASE_URL")
+SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
 # Trading-hours guard (mirrors the scanner): only OPEN new trades inside
 # London/NY hours and outside the 5pm rollover blackout. Close commands and
@@ -55,16 +95,13 @@ BLACKOUT = ("17:00", "18:30")  # ET
 
 def _tz():
     """America/Toronto tz, with a Windows fallback (zoneinfo needs tzdata)."""
-    tzname = os.environ.get("COPIEUR_TZ", "America/Toronto")
+    tzname = os.environ.get("COPIEUR_TZ") or INI.get("timezone") or "America/Toronto"
     if ZoneInfo is not None:
         try:
             return ZoneInfo(tzname)
         except Exception:
             pass
-    # Fallback: naive EDT (UTC-4). DST-wrong for half the year — install
-    # `tzdata` (pip install tzdata) for correct behaviour on Windows.
-    print(f"   [warn] timezone database missing — using UTC-4 fallback. "
-          f"Run: pip install tzdata")
+    print(f"   [warn] timezone database missing — using UTC-4 fallback.")
     return dt.timezone(dt.timedelta(hours=-4))
 
 
@@ -268,7 +305,8 @@ def run_once(watermark):
                 balance = info.balance
             except Exception:
                 balance = 0.0
-            volume = size_lots(balance, float(acc["risk_pct"]), float(sig["pips_sl"]), our_pair)
+            volume = size_lots(balance, float(acc["risk_pct"]), float(sig["pips_sl"]), our_pair,
+                              unit_lookup=globals().get("USD_PER_UNIT_LOT", _BUILTIN_UNITS))
             if volume <= 0:
                 print(f"   [skip] {acc['name']} {our_pair}: size=0 (stop={sig['pips_sl']})")
                 mt5.shutdown()

@@ -1,0 +1,13 @@
+; Octane Traders — copier configuration
+; Copy this file to copier.ini (same folder as the .exe) and fill in your values.
+; NOTE: keep copier.ini private — it contains your Supabase service-role key.
+
+[copier]
+; Supabase project URL (e.g. https://abcdefghijklm.supabase.co)
+supabase_url = https://YOUR-REF.supabase.co
+
+; Supabase SERVICE ROLE key (NOT the anon/publishable key)
+supabase_service_role_key = YOUR_SERVICE_ROLE_KEY
+
+; Your local timezone for the trading-hours / blackout window
+timezone = America/Toronto

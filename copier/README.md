@@ -4,6 +4,33 @@ Copies signals from Supabase into **multiple MT5 accounts**, sizing each trade
 from that account's own risk % (default 0.5%), rounded **down** to the 0.01 lot
 step.
 
+## Two ways to run it
+
+### 🪟 A) Standalone Windows .exe (no Python needed — recommended)
+
+GitHub builds the exe for you — nothing to install on your PC:
+
+1. In your repo: **Actions → "Build Copier (Windows .exe)" → Run workflow**
+2. When it finishes, open the run → **Artifacts → `octane-copier-windows`** → download + unzip
+3. You get:
+   - `octane-copier.exe` — the copier (double-click to run)
+   - `copier.ini.example` → rename to `copier.ini`, fill in your Supabase URL + service-role key
+   - `config_local.py.example` → rename to `config_local.py` to override broker symbol names / pip values (optional)
+4. Double-click `octane-copier.exe`. A console window opens and runs forever.
+
+> ⚠️ **Requirements that never go away:** MT5 must be installed + running + logged
+> in, with **Tools → Options → Expert Advisors → "Allow algorithmic trading"** ticked.
+> The copier talks to the *running terminal*; if MT5 is closed, it can't trade.
+
+### 🐍 B) From source (Python)
+
+```bash
+pip install -r requirements.txt
+export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
+python3 copier.py --once      # test
+python3 copier.py             # run forever
+```
+
 ## How it works
 
 ```

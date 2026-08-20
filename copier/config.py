@@ -25,7 +25,7 @@ USD_PER_UNIT_LOT = {
     "US30":   1.0,
 }
 
-# Our internal pair name -> MT5 symbol (adjust to your broker).
+# Our internal pair name -> MT5 symbol (your broker: FX plain, CFDs use .c).
 SYMBOL_MAP = {
     "EURUSD": "EURUSD",
     "GBPUSD": "GBPUSD",
@@ -36,9 +36,9 @@ SYMBOL_MAP = {
     "USDJPY": "USDJPY",
     "XAUUSD": "XAUUSD",
     "XAGUSD": "XAGUSD",
-    "SPX500": "US500",   # common names: US500 / SPX500 / US500.cash
-    "NAS100": "USTEC",   # common names: USTEC / NAS100 / US100.cash
-    "US30":   "US30",    # common names: US30 / DJ30 / US30.cash
+    "SPX500": "SPCUSD.c",   # S&P 500
+    "NAS100": "NACUSD.c",   # Nasdaq 100
+    "US30":   "DJCUSD.c",   # Dow Jones 30
 }
 
 # Lot sizing rules (defaults; overridable per account in the admin dashboard).
