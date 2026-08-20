@@ -86,7 +86,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "1.8"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "1.9"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -226,28 +226,49 @@ def _try_order(base):
     return None, last
 
 
-def _attach_sl_tp(ticket, sl, tp):
-    """Fallback for brokers that reject SL/TP on the market order itself:
-    set the stop/target afterwards via position_modify."""
-    pos = mt5.positions_get(ticket=ticket)
-    if not pos:
-        print(f"      [sltp] position {ticket} not found")
+def _find_position(ticket_hint, symbol):
+    """Find our open position after a deal. Some brokers return a deal ticket
+    that differs from the position ticket, and positions can take a moment to
+    appear — so retry, then fall back to matching by magic number + symbol."""
+    for _ in range(8):                       # ~4s of retries
+        if ticket_hint:
+            pos = mt5.positions_get(ticket=ticket_hint)
+            if pos:
+                return pos[0]
+        allpos = mt5.positions_get() or []
+        cands = [p for p in allpos if p.magic == MAGIC and p.symbol == symbol]
+        if cands:
+            cands.sort(key=lambda p: p.time, reverse=True)
+            return cands[0]
+        time.sleep(0.5)
+    return None
+
+
+def _attach_sl_tp(ticket_hint, symbol, sl, tp):
+    """Attach SL/TP to a freshly-opened position. Tries position_modify first
+    (works even when the ticket differs), then TRADE_ACTION_SLTP."""
+    pos = _find_position(ticket_hint, symbol)
+    if pos is None:
+        print(f"      [sltp] position not found (symbol {symbol})")
         return False
     req = {
         "action": mt5.TRADE_ACTION_SLTP,
-        "position": ticket,
-        "symbol": pos[0].symbol,
+        "position": pos.ticket,
+        "symbol": pos.symbol,
         "sl": float(sl),
         "tp": float(tp),
     }
     res = mt5.order_send(req)
-    ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"      [sltp] SL/TP attached to ticket {pos.ticket}")
+        return True
+    # fallback: position_modify (MT4-style)
+    ok = mt5.position_modify(pos.ticket, float(sl), float(tp))
     if ok:
-        print(f"      [sltp] SL/TP attached to {ticket}")
-    else:
-        print(f"      [sltp] attach failed: "
-              f"{res.comment if res is not None else mt5.last_error()}")
-    return ok
+        print(f"      [sltp] SL/TP attached via position_modify (ticket {pos.ticket})")
+        return True
+    print(f"      [sltp] attach failed: {res.comment if res is not None else mt5.last_error()}")
+    return False
 
 
 def place_order(actual_sym, side, volume, sl, tp, comment):
@@ -282,9 +303,7 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
     result2 = mt5.order_send(bare)
     if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"      [filling] placed bare IOC order, attaching SL/TP...")
-        if _attach_sl_tp(result2.order, sl, tp):
-            return result2
-        # SL/TP attach failed but the position is open — return it anyway
+        _attach_sl_tp(getattr(result2, "order", None), symbol, sl, tp)
         return result2
 
     print(f"   [!] order failed {symbol}: "
@@ -468,6 +487,12 @@ def run_once(watermark):
         if symbol_map is None:
             continue
         live = mt5.positions_get(ticket=p["ticket"]) if p["ticket"] else []
+        if not live:
+            # fallback: match by magic + symbol (ticket may differ from ours)
+            actual_sym = symbol_map.get(p["pair"])
+            allpos = mt5.positions_get() or []
+            live = [x for x in allpos
+                    if x.magic == MAGIC and (actual_sym is None or x.symbol == actual_sym)]
         if not live:
             # position gone -> closed. Infer win/loss from the signal's outcome.
             outcome = None
