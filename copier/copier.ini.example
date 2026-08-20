@@ -13,6 +13,13 @@ supabase_service_role_key = YOUR_SERVICE_ROLE_KEY
 timezone = America/Toronto
 
 ; Order placement mode: "pending" (limit order at signal entry, 30-min expiry)
-; or "market" (immediate). Default is pending.
+; or "market" (immediate). Default is pending for swing.
 ; order_mode = pending
 ; pending_ttl_min = 30
+
+; ---- Option A: embedded broker-native scalp engine ----
+; When on, the copier generates scalp signals itself from MT5's own candles
+; (no Yahoo, no futures-vs-CFD mismatch, ~15s latency) and trades them as
+; market orders. Set embedded_scalp = off to disable and rely on GitHub only.
+; embedded_scalp = on
+; scalp_cooldown_min = 30

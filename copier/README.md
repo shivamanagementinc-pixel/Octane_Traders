@@ -76,6 +76,24 @@ signals (Supabase) ──▶ copier.py ──▶ each active MT5 account
    python3 copier.py             # run forever (use tmux / systemd / pm2)
    ```
 
+## Two signal sources (Option A + D architecture)
+
+The copier now has a clean **brain vs hands** split:
+
+- **Embedded scalp engine (Option A)** — `signal_engine.py` generates scalp
+  signals from **MT5's own candles** (broker-native, ~15s latency, no Yahoo, no
+  futures-vs-CFD mismatch) and the copier executes them as **market orders**.
+  Toggle with `embedded_scalp = on/off` and `scalp_cooldown_min` in `copier.ini`.
+
+- **Swing signals (Option D)** — the GitHub scanner (Yahoo FX + PAXG gold)
+  still writes swing signals to Supabase, and the copier executes them as
+  **pending LIMIT orders** at the signal entry (they have hours to fill, so the
+  slower pipeline is fine there).
+
+This is why the product isn't "just an EA": the brain (signal_engine) is a
+standalone module that can later run on a cloud server for Stage 2, fanning one
+signal out to many subscriber accounts via MetaApi.
+
 ## Order mode: pending vs market
 
 By default (`ORDER_MODE = "pending"`) the copier places a **LIMIT order at the

@@ -43,6 +43,7 @@ except ImportError:
 
 from config import SYMBOL_MAP, MAGIC, DEFAULT_RISK_PCT, USD_PER_UNIT_LOT as _BUILTIN_UNITS
 from lot_calculator import size_lots
+import signal_engine
 
 # ------------------------------------------------------------------ config
 def _app_dir():
@@ -86,7 +87,22 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
+<<<<<<< Updated upstream
 VERSION = "2.4"  # bumped on each build; check the console banner to confirm the exe
+=======
+VERSION = "3.0"  # bumped on each build; check the console banner to confirm the exe
+
+# ---- Option A: broker-native embedded scalp engine -------------------------
+# When True, the copier generates scalp signals itself from MT5's own candles
+# (no Yahoo, no futures-vs-CFD mismatch, ~15s latency) and places them as
+# market orders. Swing signals still come from Supabase (Option D: pending).
+EMBEDDED_SCALP = (_cfg("EMBEDDED_SCALP") or "on").lower() not in ("off", "0", "false", "no")
+try:
+    SCALP_COOLDOWN_MIN = float(_cfg("SCALP_COOLDOWN_MIN") or 30)
+except (TypeError, ValueError):
+    SCALP_COOLDOWN_MIN = 30.0
+_scalp_last = {}              # (account_id, asset, side) -> epoch seconds
+>>>>>>> Stashed changes
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -497,6 +513,71 @@ def close_position(ticket):
 
 
 # ------------------------------------------------------------------ main loop
+def _any_open(symbol):
+    """True if we already hold an open position OR pending order (our magic) on
+    this symbol — prevents stacking."""
+    if not MT5_AVAILABLE:
+        return False
+    for p in (mt5.positions_get() or []):
+        if p.magic == MAGIC and p.symbol == symbol:
+            return True
+    try:
+        for o in (mt5.orders_get(symbol=symbol) or []):
+            if o.magic == MAGIC:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def push_embedded_signal(s):
+    """Write a broker-native scalp signal to Supabase (dashboard + Telegram).
+    Returns the new signal id, or None on failure."""
+    key = f"embedded|{s['asset']}|{s['side']}|{int(time.time())}"
+    payload = {
+        "signal_key": key, "strategy": "scalp", "pair": s["asset"], "side": s["side"],
+        "price": s["price"], "zone_lo": s["sl"], "zone_hi": s["tp"], "zone_type": "ATR",
+        "sl": s["sl"], "tp": s["tp"], "pips_tp": s["pips_tp"], "pips_sl": s["pips_sl"],
+        "rr": s["rr"], "score": None, "sweep_level": None, "htf_bias": s["bias"],
+        "deal_pos": s["rsi"],
+        "reasons": [f"broker-native 5m RSI {s['rsi']}", f"{s['bias']} 15m trend",
+                    "momentum pullback (embedded)"],
+    }
+    try:
+        row = sb_insert("signals", payload)
+        if isinstance(row, list) and row:
+            return row[0].get("id")
+        return row.get("id") if isinstance(row, dict) else None
+    except Exception as e:
+        print(f"   [embedded] signal push failed: {e}")
+        return None
+
+
+def _position_profit(ticket, symbol=None):
+    """Realized P&L of a (now closed) position, from MT5 history. Returns
+    float, or None if undetermined."""
+    if not MT5_AVAILABLE:
+        return None
+    try:
+        if ticket:
+            deals = mt5.history_deals_get(position=int(ticket))
+            if deals is not None and len(deals) > 0:
+                return float(sum(d.profit for d in deals))
+    except Exception:
+        pass
+    try:
+        deals = mt5.history_deals_get(date_from=int(time.time()) - 86400,
+                                      date_to=int(time.time())) or []
+        cands = [d for d in deals
+                 if d.magic == MAGIC and (symbol is None or d.symbol == symbol)]
+        if cands:
+            cands.sort(key=lambda d: d.time)
+            return float(sum(d.profit for d in cands))
+    except Exception:
+        pass
+    return None
+
+
 def run_once(watermark):
     """One copier pass. Returns the newest signal created_at seen (watermark)."""
     # 1) master switch
@@ -681,6 +762,76 @@ def run_once(watermark):
                 print(f"      -> ticket {res.order}")
             mt5.shutdown()
 
+    # 4b) embedded scalp signals — broker-native (Option A). Generated from
+    #     MT5's own candles, so there is NO futures-vs-CFD mismatch and ~15s
+    #     latency. Executed as market orders (no chasing needed at this speed).
+    if EMBEDDED_SCALP and (enabled and (trading_allowed() or test_mode or IGNORE_HOURS)):
+        for acc in accounts:
+            cred = cred_by_acc.get(acc["id"])
+            if not cred:
+                continue
+            symbol_map = mt5_account(SYMBOL_MAP, cred)
+            if symbol_map is None:
+                continue
+            try:
+                scalp_sigs = signal_engine.compute_signals(symbol_map)
+            except Exception as e:
+                print(f"   [embedded] compute failed: {e}")
+                scalp_sigs = []
+            for s in scalp_sigs:
+                key = (acc["id"], s["asset"], s["side"])
+                if time.time() - _scalp_last.get(key, 0) < SCALP_COOLDOWN_MIN * 60:
+                    continue
+                if _any_open(s["symbol"]):
+                    continue
+                # sanity guard (should be ~0% on broker-native data)
+                tick = mt5.symbol_info_tick(s["symbol"])
+                live = tick.bid if tick is not None else None
+                ok_price, pct = price_sanity(s["asset"], s["price"], live)
+                if not ok_price:
+                    print(f"   [embedded] skip {s['asset']} price mismatch ({pct}%)")
+                    continue
+                try:
+                    balance = mt5.account_info().balance
+                except Exception:
+                    balance = 0.0
+                volume = size_lots(balance, float(acc["risk_pct"]), float(s["pips_sl"]),
+                                   s["asset"],
+                                   unit_lookup=globals().get("USD_PER_UNIT_LOT", _BUILTIN_UNITS))
+                if volume <= 0:
+                    _scalp_last[key] = time.time()
+                    continue
+                volume = float(volume)
+                sym_info = mt5.symbol_info(s["symbol"])
+                if sym_info is not None:
+                    import math
+                    step = sym_info.volume_step or 0.01
+                    vmin = sym_info.volume_min or 0.01
+                    vmax = sym_info.volume_max or 100.0
+                    volume = max(vmin, min(vmax, math.floor(volume / step) * step))
+                    volume = round(volume, 2)
+                if volume <= 0:
+                    _scalp_last[key] = time.time()
+                    continue
+                print(f"   [embedded] {acc['name']} {s['asset']} {s['side']} vol={volume} "
+                      f"entry={s['price']:.5f} (balance={balance:.0f}, risk={acc['risk_pct']}%)")
+                sig_id = push_embedded_signal(s)
+                res = place_order(s["symbol"], s["side"], volume, s["sl"], s["tp"],
+                                  f"octane {s['asset']} {s['side']}")
+                if res is None:
+                    _scalp_last[key] = time.time()
+                    mt5.shutdown()
+                    continue
+                sb_insert("positions", {
+                    "account_id": acc["id"], "signal_id": sig_id,
+                    "ticket": res.order, "pair": s["asset"], "side": s["side"],
+                    "volume": volume, "sl": s["sl"], "tp": s["tp"],
+                    "status": "open",
+                })
+                print(f"      -> ticket {res.order}")
+                _scalp_last[key] = time.time()
+            mt5.shutdown()
+
     # 5) admin close commands
     try:
         cmds = sb_select("commands?status=eq.pending&order=created_at.asc"
@@ -793,19 +944,28 @@ def run_once(watermark):
             live = [x for x in allpos
                     if x.magic == MAGIC and (actual_sym is None or x.symbol == actual_sym)]
         if not live:
-            # position gone -> closed. Infer win/loss from the signal's outcome.
-            outcome = None
-            if p["signal_id"]:
-                try:
-                    srow = sb_select(f"signals?id=eq.{p['signal_id']}&select=status")
-                    if srow:
-                        st = srow[0]["status"]
-                        outcome = "closed_win" if st == "hit_tp" else ("closed_loss" if st == "hit_sl" else "closed_manual")
-                except Exception:
-                    pass
-            outcome = outcome or "closed_manual"
-            sb_update(f"positions?id=eq.{p['id']}", {"status": outcome, "closed_at": dt.datetime.now(dt.timezone.utc).isoformat()})
-            print(f"   [reconcile] position {p['ticket']} -> {outcome}")
+            # position gone -> closed. Use REALIZED profit from MT5 history to
+            # decide win/loss (more accurate than TP/SL inference), and sync the
+            # linked signal so the dashboard + Telegram fire correctly.
+            profit = _position_profit(p["ticket"], symbol_map.get(p["pair"]))
+            if profit is None:
+                outcome = "closed_manual"
+            elif profit > 0:
+                outcome = "closed_win"
+            else:
+                outcome = "closed_loss"
+            if p.get("signal_id"):
+                st = {"closed_win": "hit_tp", "closed_loss": "hit_sl"}.get(outcome)
+                if st:
+                    try:
+                        sb_update(f"signals?id=eq.{p['signal_id']}", {"status": st})
+                    except Exception:
+                        pass
+            sb_update(f"positions?id=eq.{p['id']}",
+                      {"status": outcome,
+                       "closed_at": dt.datetime.now(dt.timezone.utc).isoformat()})
+            print(f"   [reconcile] position {p['ticket']} -> {outcome} "
+                  f"(profit {profit})")
         else:
             # still open: refresh profit info (optional)
             pos = live[0]
