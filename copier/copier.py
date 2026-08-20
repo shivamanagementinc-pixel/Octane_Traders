@@ -86,6 +86,12 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
+VERSION = "1.6"  # bumped on each build; check the console banner to confirm the exe
+
+# failed orders are not re-attempted within this many seconds (avoids 15s spam)
+_order_failures = {}
+RETRY_AFTER = 300
+
 # Trading-hours guard (mirrors the scanner): only OPEN new trades inside
 # London/NY hours and outside the 5pm rollover blackout. Close commands and
 # reconciliation always run.
@@ -179,45 +185,58 @@ def mt5_account(sym_map, cred):
     return actual
 
 
+def filling_candidates(symbol):
+    """Filling modes to try, in order, ending with RETURN as a universal
+    fallback.
+
+    NOTE the offset: the symbol's `filling_mode` bitmask uses MQL5 flags
+    (SYMBOL_FILLING_FOK=1, SYMBOL_FILLING_IOC=2) but the order's `type_filling`
+    uses different values (ORDER_FILLING_FOK=0, ORDER_FILLING_IOC=1,
+    ORDER_FILLING_RETURN=2). So we map them explicitly instead of AND-ing.
+    """
+    if not MT5_AVAILABLE:
+        return [mt5.ORDER_FILLING_RETURN]
+    info = mt5.symbol_info(symbol)
+    fm = getattr(info, "filling_mode", 0) if info is not None else 0
+    modes = []
+    if fm & 1:
+        modes.append(mt5.ORDER_FILLING_FOK)
+    if fm & 2:
+        modes.append(mt5.ORDER_FILLING_IOC)
+    if mt5.ORDER_FILLING_RETURN not in modes:
+        modes.append(mt5.ORDER_FILLING_RETURN)
+    return modes
+
+
 def place_order(actual_sym, side, volume, sl, tp, comment):
     symbol = actual_sym
     price = mt5.symbol_info_tick(symbol)
     if price is None:
         print(f"   [!] no tick for {symbol}")
         return None
-    if side == "LONG":
-        req = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5.ORDER_TYPE_BUY,
-            "price": price.ask,
-            "sl": float(sl),
-            "tp": float(tp),
-            "magic": MAGIC,
-            "comment": comment[:27],
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
-        }
-    else:
-        req = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5.ORDER_TYPE_SELL,
-            "price": price.bid,
-            "sl": float(sl),
-            "tp": float(tp),
-            "magic": MAGIC,
-            "comment": comment[:27],
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
-        }
-    result = mt5.order_send(req)
-    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-        print(f"   [!] order failed {symbol}: {result.comment if result else mt5.last_error()}")
-        return None
-    return result
+    base = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": volume,
+        "type": mt5.ORDER_TYPE_BUY if side == "LONG" else mt5.ORDER_TYPE_SELL,
+        "price": price.ask if side == "LONG" else price.bid,
+        "sl": float(sl),
+        "tp": float(tp),
+        "magic": MAGIC,
+        "comment": comment[:27],
+        "type_time": mt5.ORDER_TIME_GTC,
+    }
+    last = None
+    for filling in filling_candidates(symbol):
+        req = dict(base)
+        req["type_filling"] = filling
+        result = mt5.order_send(req)
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return result
+        last = result
+    print(f"   [!] order failed {symbol}: "
+          f"{last.comment if last is not None else mt5.last_error()}")
+    return None
 
 
 def close_position(ticket):
@@ -228,24 +247,21 @@ def close_position(ticket):
     tick = mt5.symbol_info_tick(pos.symbol)
     if tick is None:
         return "no_tick"
-    if pos.type == mt5.POSITION_TYPE_BUY:
-        req = {"action": mt5.TRADE_ACTION_DEAL, "position": pos.ticket,
-               "symbol": pos.symbol, "volume": pos.volume,
-               "type": mt5.ORDER_TYPE_SELL, "price": tick.bid,
-               "magic": MAGIC, "comment": "octane-close",
-               "type_time": mt5.ORDER_TIME_GTC,
-               "type_filling": mt5.ORDER_FILLING_FOK}
-    else:
-        req = {"action": mt5.TRADE_ACTION_DEAL, "position": pos.ticket,
-               "symbol": pos.symbol, "volume": pos.volume,
-               "type": mt5.ORDER_TYPE_BUY, "price": tick.ask,
-               "magic": MAGIC, "comment": "octane-close",
-               "type_time": mt5.ORDER_TIME_GTC,
-               "type_filling": mt5.ORDER_FILLING_FOK}
-    result = mt5.order_send(req)
-    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-        return f"failed: {result.comment if result else mt5.last_error()}"
-    return "closed"
+    base = {"action": mt5.TRADE_ACTION_DEAL, "position": pos.ticket,
+            "symbol": pos.symbol, "volume": pos.volume,
+            "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+            "price": tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask,
+            "magic": MAGIC, "comment": "octane-close",
+            "type_time": mt5.ORDER_TIME_GTC}
+    last = None
+    for filling in filling_candidates(pos.symbol):
+        req = dict(base)
+        req["type_filling"] = filling
+        result = mt5.order_send(req)
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return "closed"
+        last = result
+    return f"failed: {last.comment if last is not None else mt5.last_error()}"
 
 
 # ------------------------------------------------------------------ main loop
@@ -342,8 +358,17 @@ def run_once(watermark):
                 continue
             print(f"   [trade] {acc['name']} {our_pair} {sig['side']} vol={volume} "
                   f"(balance={balance:.0f}, risk={acc['risk_pct']}%, stop={sig['pips_sl']})")
+            # skip signals that failed recently (avoid retry spam every 15s)
+            fail_key = (acc["id"], sig["id"])
+            if time.time() - _order_failures.get(fail_key, 0) < RETRY_AFTER:
+                mt5.shutdown()
+                continue
             res = place_order(sym, sig["side"], volume, sig["sl"], sig["tp"],
                               f"octane {our_pair} {sig['side']}")
+            if res is None:
+                _order_failures[fail_key] = time.time()
+                mt5.shutdown()
+                continue
             if res is not None and res.order > 0:
                 sb_insert("positions", {
                     "account_id": acc["id"], "signal_id": sig["id"],
@@ -437,7 +462,7 @@ def main():
         sys.exit(1)
     # start watermark at now-2h so we don't replay ancient signals
     watermark = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
-    print("Octane Traders copier started.")
+    print(f"Octane Traders copier v{VERSION} started.")
     while True:
         try:
             watermark = run_once(watermark)
