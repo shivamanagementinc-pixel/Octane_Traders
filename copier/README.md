@@ -76,6 +76,19 @@ signals (Supabase) ──▶ copier.py ──▶ each active MT5 account
    python3 copier.py             # run forever (use tmux / systemd / pm2)
    ```
 
+## Order mode: pending vs market
+
+By default (`ORDER_MODE = "pending"`) the copier places a **LIMIT order at the
+signal's entry price**, valid for `PENDING_TTL_MIN` (30) minutes. This avoids
+"chasing" a price that drifted during the scan/copy lag:
+
+- price retraces to entry → fills at a good price
+- price runs away → the order expires and you skip (no bad chase)
+- price already in your favour → fills immediately at the better market price
+
+Set `ORDER_MODE = "market"` (or `order_mode = market` in `copier.ini`) for the
+old immediate market-order behaviour.
+
 ## Safety defaults (Stage 1)
 
 - Default risk = **0.5%** per trade per account (change per account in admin)
@@ -83,6 +96,9 @@ signals (Supabase) ──▶ copier.py ──▶ each active MT5 account
 - Min lot 0.01, max 100, and MT5's own symbol min/step is also enforced
 - Master kill-switch pauses new entries but still allows close commands
 - Only signals with a valid stop distance are traded (no stop = skip)
+- **Price sanity**: a signal whose price diverges >0.3% (FX) / >0.5% (gold,
+  indices) from the broker's live quote is skipped (guards against futures-vs-
+  spot and stale data)
 - **Trading-hours guard**: new trades are only opened during London/NY
   (03:00–17:00 ET) and NOT during the 17:00–18:30 rollover blackout. Close
   commands and position reconciliation always run, 24/5.

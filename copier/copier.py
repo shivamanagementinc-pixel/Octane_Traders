@@ -86,11 +86,33 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "2.0"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "2.3"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
 RETRY_AFTER = 300
+
+# Signals older than this are STALE and are never traded (market has moved on).
+# The scanners close out signals within one 5-min cycle, so anything older than
+# 10 minutes that is still "open" is either broken or already invalid.
+MAX_SIGNAL_AGE_MIN = 10
+
+# Signals open longer than this are marked "expired" (very likely broken — a
+# legit signal in these short-term systems hits TP/SL well before an hour).
+SWEEP_AGE_MIN = 60
+
+# heartbeat throttle: when idle, only print the status line once per this long
+_idle_heartbeat = 0.0
+HEARTBEAT_SECS = 60
+
+# Order placement mode:
+#   "pending"  — place a LIMIT order at the signal's entry price, valid for
+#                PENDING_TTL_MIN minutes (default). Avoids chasing a price that
+#                drifted during the scan/copy lag: you either fill at a good
+#                price or the order expires and you skip.
+#   "market"   — place a market order immediately (old behaviour).
+ORDER_MODE = "pending"
+PENDING_TTL_MIN = 30
 
 # Trading-hours guard (mirrors the scanner): only OPEN new trades inside
 # London/NY hours and outside the 5pm rollover blackout. Close commands and
@@ -273,8 +295,6 @@ def _attach_sl_tp(ticket_hint, symbol, sl, tp):
 
 
 def _valid_stops(side, sl, tp, price):
-    """Reject stops on the wrong side of price or too far away (brokers cap
-    stop distance). Returns (ok, reason)."""
     try:
         sl = float(sl); tp = float(tp); price = float(price)
     except (TypeError, ValueError):
@@ -292,6 +312,33 @@ def _valid_stops(side, sl, tp, price):
     if dist > abs(price) * 0.25:
         return False, f"stop too far ({dist:.5f} from price)"
     return True, ""
+
+
+def price_sanity(pair, signal_price, live_price):
+    """Refuse trades whose signal price is far from the broker's live price.
+
+    The scanners use Yahoo data (gold FUTURES for XAUUSD, index futures for the
+    CFDs). Those can diverge from the broker's spot/CFD quotes — gold futures
+    vs spot has been off by $50+ in this market. If the divergence is beyond a
+    small tolerance, the levels are meaningless on this account -> skip.
+
+    Returns (ok, pct_deviation).
+    """
+    try:
+        signal_price = float(signal_price)
+        live_price = float(live_price)
+    except (TypeError, ValueError):
+        return False, None
+    if live_price <= 0:
+        return False, None
+    pct = abs(signal_price - live_price) / live_price * 100.0
+    if pair in ("XAUUSD", "XAGUSD"):
+        tol = float(_cfg("PRICE_TOL_PCT_METALS") or 0.5)
+    elif pair in ("SPX500", "NAS100", "US30"):
+        tol = float(_cfg("PRICE_TOL_PCT_INDEX") or 0.5)
+    else:
+        tol = float(_cfg("PRICE_TOL_PCT_FX") or 0.3)
+    return pct <= tol, round(pct, 2)
 
 
 def place_order(actual_sym, side, volume, sl, tp, comment):
@@ -339,6 +386,68 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
 
     print(f"   [!] order failed {symbol}: "
           f"{last.comment if last is not None else mt5.last_error()}")
+    return None
+
+
+def place_pending_order(actual_sym, side, entry_price, volume, sl, tp, comment):
+    """Place a LIMIT order at the signal's entry price, valid for
+    PENDING_TTL_MIN minutes, with SL/TP attached (or attach after fill if the
+    broker rejects stops on the pending order). Returns a dict with
+    {'ok': True, 'order': ticket, 'needs_sltp_after_fill': bool} or
+    {'ok': False, 'reason': str}."""
+    symbol = actual_sym
+    try:
+        entry_price = float(entry_price)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "bad entry price"}
+
+    try:
+        ttl_min = float(_cfg("PENDING_TTL_MIN") or PENDING_TTL_MIN)
+    except (TypeError, ValueError):
+        ttl_min = PENDING_TTL_MIN
+    exp = int(time.time() + ttl_min * 60)
+    base = {
+        "action": mt5.TRADE_ACTION_PENDING,
+        "symbol": symbol,
+        "volume": volume,
+        "type": mt5.ORDER_TYPE_BUY_LIMIT if side == "LONG" else mt5.ORDER_TYPE_SELL_LIMIT,
+        "price": entry_price,
+        "sl": float(sl),
+        "tp": float(tp),
+        "magic": MAGIC,
+        "comment": comment[:27],
+        "type_time": mt5.ORDER_TIME_SPECIFIED,
+        "type_filling": mt5.ORDER_FILLING_RETURN,
+        "expiration": exp,
+    }
+
+    # try WITH SL/TP first
+    result = mt5.order_send(dict(base))
+    if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+        return {"ok": True, "order": result.order, "needs_sltp_after_fill": False}
+
+    # fallback: bare limit order (attach SL/TP after it fills)
+    bare = dict(base)
+    bare.pop("sl", None)
+    bare.pop("tp", None)
+    result2 = mt5.order_send(bare)
+    if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"      [pending] limit placed WITHOUT SL/TP (will attach on fill)")
+        return {"ok": True, "order": result2.order, "needs_sltp_after_fill": True}
+
+    msg = result2.comment if result2 is not None else (result.comment if result is not None else mt5.last_error())
+    return {"ok": False, "reason": msg}
+
+
+def _existing_pending(symbol):
+    """Any of OUR pending orders already open on this symbol? -> ticket or None."""
+    try:
+        orders = mt5.orders_get(symbol=symbol) or []
+    except Exception:
+        return None
+    for o in orders:
+        if o.magic == MAGIC:
+            return o.ticket
     return None
 
 
@@ -402,10 +511,37 @@ def run_once(watermark):
     try:
         wm = watermark.isoformat().replace("+00:00", "Z")
         sigs = sb_select(f"signals?status=eq.open&created_at=gt.{wm}&order=created_at.asc"
-                         "&select=id,pair,side,sl,tp,pips_sl,strategy,created_at")
+                         "&select=id,pair,side,sl,tp,pips_sl,strategy,created_at,price")
     except Exception as e:
         print(f"   [!] signals read failed: {e}")
         sigs = []
+
+    # 3b) split into FRESH (tradeable) vs STALE (skip + mark expired)
+    now_ts = dt.datetime.now(dt.timezone.utc).timestamp()
+    fresh_sigs, stale_sigs = [], []
+    for s in sigs:
+        try:
+            age_min = (now_ts - dt.datetime.fromisoformat(
+                str(s["created_at"]).replace("Z", "+00:00")).timestamp()) / 60.0
+        except Exception:
+            age_min = 999
+        (fresh_sigs if age_min <= MAX_SIGNAL_AGE_MIN else stale_sigs).append((s, age_min))
+
+    # 3c) sweep: signals older than SWEEP_AGE_MIN are almost certainly broken
+    #     (or the scanners' close-out missed them) -> mark "expired" so they
+    #     stop cluttering the dashboard and are never re-attempted.
+    #     Signals between MAX_SIGNAL_AGE_MIN and SWEEP_AGE_MIN are skipped
+    #     (not traded) but left open — the scanner may still close them.
+    for s, age_min in stale_sigs:
+        if age_min >= SWEEP_AGE_MIN:
+            try:
+                sb_update(f"signals?id=eq.{s['id']}", {"status": "expired"})
+                print(f"   [sweep] stale {s['pair']} {s['side']} ({int(age_min)}m old) -> expired")
+            except Exception as e:
+                print(f"   [sweep] failed {s['id']}: {e}")
+        else:
+            print(f"   [stale] skipping {s['pair']} {s['side']} ({int(age_min)}m old — not traded)")
+    sigs = [s for s, _ in fresh_sigs]
 
     # 4) already-placed signal ids per account (avoid double-entry)
     try:
@@ -414,13 +550,18 @@ def run_once(watermark):
     except Exception:
         placed_keys = set()
 
-    print(f"   [copier] {len(accounts)} account(s) connected, {len(sigs)} new signal(s)")
-    if not enabled:
-        print(f"   [kill-switch] trading paused — processing only admin close commands")
-    elif not (trading_allowed() or test_mode or IGNORE_HOURS):
-        print(f"   [hours] outside trading session/blackout — not opening new trades")
-    elif test_mode:
-        print(f"   [test-mode] hours guard bypassed — will place demo orders")
+    global _idle_heartbeat
+    show = bool(sigs) or (time.time() - _idle_heartbeat >= HEARTBEAT_SECS)
+    if show:
+        print(f"   [copier] {len(accounts)} account(s) connected, {len(sigs)} new signal(s)")
+        if not enabled:
+            print(f"   [kill-switch] trading paused — processing only admin close commands")
+        elif not (trading_allowed() or test_mode or IGNORE_HOURS):
+            print(f"   [hours] outside trading session/blackout — not opening new trades")
+        elif test_mode:
+            print(f"   [test-mode] hours guard bypassed — will place demo orders")
+        if not sigs:
+            _idle_heartbeat = time.time()
 
     open_new = enabled and (trading_allowed() or test_mode or IGNORE_HOURS)
 
@@ -444,6 +585,17 @@ def run_once(watermark):
                 balance = info.balance
             except Exception:
                 balance = 0.0
+            # price sanity: is the signal's price close to THIS broker's live
+            # price? (data-source mismatch guard — futures vs spot, stale data)
+            tick = mt5.symbol_info_tick(sym) if MT5_AVAILABLE else None
+            live_price = tick.bid if tick is not None else None
+            ok_price, pct = price_sanity(our_pair, sig.get("price"), live_price)
+            if not ok_price:
+                print(f"   [skip] {our_pair} price mismatch: signal "
+                      f"{sig.get('price')} vs broker {live_price} ({pct}% off)")
+                _order_failures[(acc["id"], sig["id"])] = time.time()
+                mt5.shutdown()
+                continue
             volume = size_lots(balance, float(acc["risk_pct"]), float(sig["pips_sl"]), our_pair,
                               unit_lookup=globals().get("USD_PER_UNIT_LOT", _BUILTIN_UNITS))
             if volume <= 0:
@@ -470,13 +622,40 @@ def run_once(watermark):
             if time.time() - _order_failures.get(fail_key, 0) < RETRY_AFTER:
                 mt5.shutdown()
                 continue
-            res = place_order(sym, sig["side"], volume, sig["sl"], sig["tp"],
-                              f"octane {our_pair} {sig['side']}")
-            if res is None:
+            # dedup: never stack a second order if we already hold a pending
+            # order (or open position) on this symbol.
+            if _existing_pending(sym):
+                print(f"      [dup] pending order already open for {sym} — skipping")
                 _order_failures[fail_key] = time.time()
                 mt5.shutdown()
                 continue
-            if res is not None and res.order > 0:
+
+            mode = _cfg("ORDER_MODE") or ORDER_MODE
+            entry_price = sig.get("price")
+            if mode == "pending" and entry_price:
+                out = place_pending_order(sym, sig["side"], entry_price, volume,
+                                          sig["sl"], sig["tp"],
+                                          f"octane {our_pair} {sig['side']}")
+                if not out.get("ok"):
+                    _order_failures[fail_key] = time.time()
+                    print(f"   [pending] failed {sym}: {out.get('reason')}")
+                    mt5.shutdown()
+                    continue
+                sb_insert("positions", {
+                    "account_id": acc["id"], "signal_id": sig["id"],
+                    "ticket": out["order"], "pair": our_pair, "side": sig["side"],
+                    "volume": volume, "sl": sig["sl"], "tp": sig["tp"],
+                    "status": "pending",
+                })
+                print(f"      -> pending LIMIT @ {entry_price:.5f} "
+                      f"(order {out['order']}, expires in {PENDING_TTL_MIN} min)")
+            else:
+                res = place_order(sym, sig["side"], volume, sig["sl"], sig["tp"],
+                                  f"octane {our_pair} {sig['side']}")
+                if res is None:
+                    _order_failures[fail_key] = time.time()
+                    mt5.shutdown()
+                    continue
                 sb_insert("positions", {
                     "account_id": acc["id"], "signal_id": sig["id"],
                     "ticket": res.order, "pair": our_pair, "side": sig["side"],
@@ -502,6 +681,11 @@ def run_once(watermark):
             if symbol_map is None:
                 continue
             if cmd["action"] == "close_all":
+                # cancel pending orders AND close open positions
+                for o in (mt5.orders_get() or []):
+                    if o.magic == MAGIC:
+                        mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
+                        print(f"   [close_all] cancelled pending {o.ticket}")
                 open_pos = mt5.positions_get()
                 open_pos = [p for p in open_pos if p.magic == MAGIC] if open_pos else []
                 for p in open_pos:
@@ -510,14 +694,53 @@ def run_once(watermark):
             elif cmd["action"] == "close_position" and cmd["ticket"]:
                 r = close_position(cmd["ticket"])
                 print(f"   [close] ticket {cmd['ticket']}: {r}")
+            elif cmd["action"] == "cancel_pending" and cmd["ticket"]:
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": cmd["ticket"]})
+                ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+                print(f"   [cancel] pending {cmd['ticket']}: "
+                      f"{'cancelled' if ok else (res.comment if res else mt5.last_error())}")
             mt5.shutdown()
         sb_update(f"commands?id=eq.{cmd['id']}", {"status": "done"})
 
     # 6) reconcile: mark positions closed when they vanish from MT5
     try:
-        open_pos = sb_select("positions?status=eq.open&select=id,account_id,ticket,pair,side,volume,signal_id")
+        open_pos = sb_select("positions?status=eq.open&select=id,account_id,ticket,pair,side,volume,signal_id,sl,tp")
+        pend_pos = sb_select("positions?status=eq.pending&select=id,account_id,ticket,pair,side,volume,signal_id,sl,tp")
     except Exception:
-        open_pos = []
+        open_pos, pend_pos = [], []
+
+    # 6a) pending orders: did they fill (-> position) or expire (-> gone)?
+    for p in pend_pos:
+        cred = cred_by_acc.get(p["account_id"])
+        if not cred:
+            continue
+        symbol_map = mt5_account(SYMBOL_MAP, cred)
+        if symbol_map is None:
+            continue
+        order = mt5.orders_get(ticket=p["ticket"]) if p["ticket"] else []
+        if order:
+            mt5.shutdown()
+            continue                       # still pending — leave it
+        # order is gone: either filled or expired
+        actual_sym = symbol_map.get(p["pair"])
+        allpos = mt5.positions_get() or []
+        filled = [x for x in allpos
+                  if x.magic == MAGIC and (actual_sym is None or x.symbol == actual_sym)]
+        if filled:
+            pos = filled[0]
+            # ensure SL/TP (in case the limit was placed bare)
+            _attach_sl_tp(pos.ticket, actual_sym or pos.symbol, p["sl"], p["tp"])
+            sb_update(f"positions?id=eq.{p['id']}",
+                      {"status": "open", "ticket": pos.ticket})
+            print(f"   [reconcile] pending {p['pair']} FILLED -> ticket {pos.ticket}")
+        else:
+            sb_update(f"positions?id=eq.{p['id']}",
+                      {"status": "expired",
+                       "closed_at": dt.datetime.now(dt.timezone.utc).isoformat()})
+            print(f"   [reconcile] pending {p['pair']} expired (never triggered)")
+        mt5.shutdown()
+
+    # 6b) open positions: mark closed when they vanish from MT5
     for p in open_pos:
         cred = cred_by_acc.get(p["account_id"])
         if not cred:

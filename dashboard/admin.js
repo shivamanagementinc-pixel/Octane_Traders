@@ -23,7 +23,7 @@ async function loadAll() {
   if (!state.client) return;
   const { data: accts } = await state.client.from("accounts").select("*").order("id");
   const { data: creds } = await state.client.from("account_credentials").select("account_id, mt5_login");
-  const { data: pos } = await state.client.from("positions").select("*").eq("status", "open").order("opened_at", { ascending: false });
+  const { data: pos } = await state.client.from("positions").select("*").in("status", ["open", "pending"]).order("opened_at", { ascending: false });
   const { data: settings } = await state.client.from("settings").select("*").eq("key", "trade_enabled");
   const today = new Date().toISOString().slice(0, 10);
   const { data: wins } = await state.client.from("signals").select("id").eq("status", "hit_tp").gte("created_at", today);
@@ -71,7 +71,9 @@ async function loadAll() {
       <td class="num muted">${fmtPx(p.pair, p.sl)}</td>
       <td class="num muted">${fmtPx(p.pair, p.tp)}</td>
       <td class="muted">${fmtTime(p.opened_at)}</td>
-      <td><button class="m m-del" data-ticket="${p.ticket}" data-acc="${p.account_id}" data-act="close">close</button></td>
+      <td>${p.status === "pending"
+        ? `<span class="st st-open">pending</span> <button class="m m-del" data-ticket="${p.ticket}" data-acc="${p.account_id}" data-act="cancel">cancel</button>`
+        : `<button class="m m-del" data-ticket="${p.ticket}" data-acc="${p.account_id}" data-act="close">close</button>`}</td>
     </tr>`;
   }).join("");
   $("positions-empty").classList.toggle("hidden", state.positions.length > 0);
@@ -87,6 +89,12 @@ async function closePosition(ticket, accId) {
   if (!state.client) return;
   await state.client.from("commands").insert({ action: "close_position", ticket: Number(ticket), account_id: accId });
   alert("Close command queued — the copier executes it within ~15s.");
+  loadAll();
+}
+async function cancelPending(ticket, accId) {
+  if (!state.client) return;
+  await state.client.from("commands").insert({ action: "cancel_pending", ticket: Number(ticket), account_id: accId });
+  alert("Cancel queued — the copier removes the pending order within ~15s.");
   loadAll();
 }
 async function closeAll() {
@@ -159,7 +167,9 @@ function bind() {
   });
   $("positions-table").addEventListener("click", (e) => {
     const b = e.target.closest(".m");
-    if (b && b.dataset.act === "close") closePosition(b.dataset.ticket, Number(b.dataset.acc));
+    if (!b || !b.dataset.act) return;
+    if (b.dataset.act === "close") closePosition(b.dataset.ticket, Number(b.dataset.acc));
+    if (b.dataset.act === "cancel") cancelPending(b.dataset.ticket, Number(b.dataset.acc));
   });
 }
 

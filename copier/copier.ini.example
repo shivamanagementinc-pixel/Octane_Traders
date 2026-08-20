@@ -11,3 +11,8 @@ supabase_service_role_key = YOUR_SERVICE_ROLE_KEY
 
 ; Your local timezone for the trading-hours / blackout window
 timezone = America/Toronto
+
+; Order placement mode: "pending" (limit order at signal entry, 30-min expiry)
+; or "market" (immediate). Default is pending.
+; order_mode = pending
+; pending_ttl_min = 30
