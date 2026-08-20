@@ -20,11 +20,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pyinstaller MetaTrader5 tzdata requests
+        run: pip install pyinstaller MetaTrader5 tzdata requests numpy
 
       - name: Build exe
         working-directory: copier
-        run: pyinstaller --noconfirm --onefile --console --name octane-copier --collect-all MetaTrader5 --hidden-import config --hidden-import lot_calculator copier.py
+        run: pyinstaller --noconfirm --onefile --console --name octane-copier --collect-all MetaTrader5 --collect-all numpy --collect-all tzdata --hidden-import config --hidden-import lot_calculator copier.py
 
       - name: List build output
         working-directory: copier
