@@ -87,9 +87,6 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-<<<<<<< Updated upstream
-VERSION = "2.4"  # bumped on each build; check the console banner to confirm the exe
-=======
 VERSION = "3.0"  # bumped on each build; check the console banner to confirm the exe
 
 # ---- Option A: broker-native embedded scalp engine -------------------------
@@ -102,7 +99,6 @@ try:
 except (TypeError, ValueError):
     SCALP_COOLDOWN_MIN = 30.0
 _scalp_last = {}              # (account_id, asset, side) -> epoch seconds
->>>>>>> Stashed changes
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
