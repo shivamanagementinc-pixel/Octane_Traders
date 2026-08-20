@@ -86,7 +86,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "1.9"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "2.0"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -245,30 +245,53 @@ def _find_position(ticket_hint, symbol):
 
 
 def _attach_sl_tp(ticket_hint, symbol, sl, tp):
-    """Attach SL/TP to a freshly-opened position. Tries position_modify first
-    (works even when the ticket differs), then TRADE_ACTION_SLTP."""
-    pos = _find_position(ticket_hint, symbol)
-    if pos is None:
-        print(f"      [sltp] position not found (symbol {symbol})")
+    """Attach SL/TP to a freshly-opened position via TRADE_ACTION_SLTP.
+    (MT5's Python package has NO `position_modify` — that was an MT4-ism.)
+    Never raises: a failure returns False and the caller decides what to do."""
+    try:
+        pos = _find_position(ticket_hint, symbol)
+        if pos is None:
+            print(f"      [sltp] position not found (symbol {symbol})")
+            return False
+        req = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": pos.ticket,
+            "symbol": pos.symbol,
+            "sl": float(sl),
+            "tp": float(tp),
+            "deviation": 20,
+        }
+        res = mt5.order_send(req)
+        if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+            print(f"      [sltp] SL/TP attached to ticket {pos.ticket}")
+            return True
+        print(f"      [sltp] attach failed: {res.comment if res is not None else mt5.last_error()}")
         return False
-    req = {
-        "action": mt5.TRADE_ACTION_SLTP,
-        "position": pos.ticket,
-        "symbol": pos.symbol,
-        "sl": float(sl),
-        "tp": float(tp),
-    }
-    res = mt5.order_send(req)
-    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
-        print(f"      [sltp] SL/TP attached to ticket {pos.ticket}")
-        return True
-    # fallback: position_modify (MT4-style)
-    ok = mt5.position_modify(pos.ticket, float(sl), float(tp))
-    if ok:
-        print(f"      [sltp] SL/TP attached via position_modify (ticket {pos.ticket})")
-        return True
-    print(f"      [sltp] attach failed: {res.comment if res is not None else mt5.last_error()}")
-    return False
+    except Exception as e:
+        print(f"      [sltp] attach error: {e}")
+        return False
+
+
+def _valid_stops(side, sl, tp, price):
+    """Reject stops on the wrong side of price or too far away (brokers cap
+    stop distance). Returns (ok, reason)."""
+    try:
+        sl = float(sl); tp = float(tp); price = float(price)
+    except (TypeError, ValueError):
+        return False, "bad numbers"
+    if sl <= 0 or tp <= 0:
+        return False, "zero stop"
+    if side == "LONG":
+        if not (sl < price < tp):
+            return False, f"stops on wrong side (price {price}, sl {sl}, tp {tp})"
+    else:
+        if not (tp < price < sl):
+            return False, f"stops on wrong side (price {price}, sl {sl}, tp {tp})"
+    # generous sanity cap: stop further than 25% of price away is likely stale
+    dist = abs(price - sl)
+    if dist > abs(price) * 0.25:
+        return False, f"stop too far ({dist:.5f} from price)"
+    return True, ""
 
 
 def place_order(actual_sym, side, volume, sl, tp, comment):
@@ -277,12 +300,17 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
     if price is None:
         print(f"   [!] no tick for {symbol}")
         return None
+    cur = price.bid if side == "SHORT" else price.ask
+    ok_stops, why = _valid_stops(side, sl, tp, cur)
+    if not ok_stops:
+        print(f"   [skip] invalid stops for {symbol}: {why}")
+        return None
     base = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": volume,
         "type": mt5.ORDER_TYPE_BUY if side == "LONG" else mt5.ORDER_TYPE_SELL,
-        "price": price.ask if side == "LONG" else price.bid,
+        "price": cur,
         "sl": float(sl),
         "tp": float(tp),
         "magic": MAGIC,
@@ -294,8 +322,8 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
     if result is not None:
         return result
 
-    # Fallback: some brokers only accept a bare market order, then SL/TP via
-    # a separate modification.
+    # Fallback: bare market order, then attach SL/TP. SAFETY: if the attach
+    # fails, close the bare position immediately — never hold it naked.
     bare = dict(base)
     bare.pop("sl", None)
     bare.pop("tp", None)
@@ -303,12 +331,23 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
     result2 = mt5.order_send(bare)
     if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"      [filling] placed bare IOC order, attaching SL/TP...")
-        _attach_sl_tp(getattr(result2, "order", None), symbol, sl, tp)
+        attached = _attach_sl_tp(getattr(result2, "order", None), symbol, sl, tp)
+        if not attached:
+            print(f"      [safety] SL/TP attach FAILED — closing bare position")
+            _try_close_any(symbol)
         return result2
 
     print(f"   [!] order failed {symbol}: "
           f"{last.comment if last is not None else mt5.last_error()}")
     return None
+
+
+def _try_close_any(symbol):
+    """Close every open position on `symbol` bearing our magic number."""
+    allpos = mt5.positions_get() or []
+    for p in allpos:
+        if p.magic == MAGIC and p.symbol == symbol:
+            close_position(p.ticket)
 
 
 def close_position(ticket):
