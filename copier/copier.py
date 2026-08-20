@@ -91,6 +91,7 @@ SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 # reconciliation always run.
 SESSION_HOURS = [(3, 17)]      # ET hours
 BLACKOUT = ("17:00", "18:30")  # ET
+IGNORE_HOURS = False           # set by --ignore-hours CLI flag
 
 
 def _tz():
@@ -249,6 +250,12 @@ def run_once(watermark):
     except Exception as e:
         print(f"   [!] settings read failed: {e}")
         return watermark
+    # optional test-mode: lets you place a demo order outside trading hours
+    try:
+        tm = sb_select("settings?key=eq.test_mode&select=key,value")
+        test_mode = bool(tm and tm[0]["value"] is True)
+    except Exception:
+        test_mode = False
 
     # 2) active accounts + credentials (service_role reads secrets)
     try:
@@ -276,14 +283,15 @@ def run_once(watermark):
     except Exception:
         placed_keys = set()
 
+    print(f"   [copier] {len(accounts)} account(s) connected, {len(sigs)} new signal(s)")
     if not enabled:
         print(f"   [kill-switch] trading paused — processing only admin close commands")
-    elif not trading_allowed():
+    elif not (trading_allowed() or test_mode or IGNORE_HOURS):
         print(f"   [hours] outside trading session/blackout — not opening new trades")
-    else:
-        print(f"   [copier] {len(accounts)} account(s), {len(sigs)} new signal(s)")
+    elif test_mode:
+        print(f"   [test-mode] hours guard bypassed — will place demo orders")
 
-    open_new = enabled and trading_allowed()
+    open_new = enabled and (trading_allowed() or test_mode or IGNORE_HOURS)
 
     for sig in sigs:
         our_pair = sig["pair"]
@@ -405,10 +413,14 @@ def run_once(watermark):
 
 
 def main():
+    global IGNORE_HOURS
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--interval", type=int, default=15)
+    ap.add_argument("--ignore-hours", action="store_true",
+                    help="place orders even outside trading hours (for testing)")
     args = ap.parse_args()
+    IGNORE_HOURS = args.ignore_hours
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars.")
         sys.exit(1)
