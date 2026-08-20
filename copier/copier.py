@@ -86,7 +86,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "1.6"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "1.7"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -186,26 +186,61 @@ def mt5_account(sym_map, cred):
 
 
 def filling_candidates(symbol):
-    """Filling modes to try, in order, ending with RETURN as a universal
-    fallback.
-
-    NOTE the offset: the symbol's `filling_mode` bitmask uses MQL5 flags
-    (SYMBOL_FILLING_FOK=1, SYMBOL_FILLING_IOC=2) but the order's `type_filling`
-    uses different values (ORDER_FILLING_FOK=0, ORDER_FILLING_IOC=1,
-    ORDER_FILLING_RETURN=2). So we map them explicitly instead of AND-ing.
+    """Filling modes to try, in order. We do NOT trust the symbol's
+    `filling_mode` bitmask (it's often 0 / misread by the package) — we simply
+    try FOK -> IOC -> RETURN until one is accepted, which covers every broker.
+    A config override FILLING_ORDER can reorder/limit this (e.g. "ioc,return").
     """
-    if not MT5_AVAILABLE:
-        return [mt5.ORDER_FILLING_RETURN]
-    info = mt5.symbol_info(symbol)
-    fm = getattr(info, "filling_mode", 0) if info is not None else 0
-    modes = []
-    if fm & 1:
-        modes.append(mt5.ORDER_FILLING_FOK)
-    if fm & 2:
-        modes.append(mt5.ORDER_FILLING_IOC)
-    if mt5.ORDER_FILLING_RETURN not in modes:
-        modes.append(mt5.ORDER_FILLING_RETURN)
-    return modes
+    override = _cfg("FILLING_ORDER")
+    if override:
+        order = []
+        for tok in override.split(","):
+            t = tok.strip().lower()
+            if t in ("fok", "0"):
+                order.append(mt5.ORDER_FILLING_FOK)
+            elif t in ("ioc", "1"):
+                order.append(mt5.ORDER_FILLING_IOC)
+            elif t in ("return", "2"):
+                order.append(mt5.ORDER_FILLING_RETURN)
+        if order:
+            return order
+    return [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+
+
+def _try_order(base):
+    """Send an order, trying each filling mode until one works. Returns
+    (result, None) on success or (None, last_result) on failure."""
+    symbol = base["symbol"]
+    last = None
+    for filling in filling_candidates(symbol):
+        req = dict(base)
+        req["type_filling"] = filling
+        result = mt5.order_send(req)
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return result, None
+        name = {0: "FOK", 1: "IOC", 2: "RETURN"}.get(filling, str(filling))
+        rc = result.retcode if result is not None else "?"
+        print(f"      [filling] {name} -> retcode {rc} "
+              f"({result.comment if result is not None else mt5.last_error()})")
+        last = result
+    return None, last
+
+
+def _attach_sl_tp(ticket, sl, tp):
+    """Fallback for brokers that reject SL/TP on the market order itself:
+    set the stop/target afterwards via position_modify."""
+    pos = mt5.positions_get(ticket=ticket)
+    if not pos:
+        return False
+    req = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "position": ticket,
+        "symbol": pos[0].symbol,
+        "sl": float(sl),
+        "tp": float(tp),
+    }
+    res = mt5.order_send(req)
+    return res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
 
 
 def place_order(actual_sym, side, volume, sl, tp, comment):
@@ -225,15 +260,26 @@ def place_order(actual_sym, side, volume, sl, tp, comment):
         "magic": MAGIC,
         "comment": comment[:27],
         "type_time": mt5.ORDER_TIME_GTC,
+        "deviation": 20,
     }
-    last = None
-    for filling in filling_candidates(symbol):
-        req = dict(base)
-        req["type_filling"] = filling
-        result = mt5.order_send(req)
-        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-            return result
-        last = result
+    result, last = _try_order(base)
+    if result is not None:
+        return result
+
+    # Fallback: some brokers only accept a bare market order, then SL/TP via
+    # a separate modification.
+    bare = dict(base)
+    bare.pop("sl", None)
+    bare.pop("tp", None)
+    bare["type_filling"] = mt5.ORDER_FILLING_IOC
+    result2 = mt5.order_send(bare)
+    if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"      [filling] placed bare IOC order, attaching SL/TP...")
+        if _attach_sl_tp(result2.order, sl, tp):
+            return result2
+        # SL/TP attach failed but the position is open — return it anyway
+        return result2
+
     print(f"   [!] order failed {symbol}: "
           f"{last.comment if last is not None else mt5.last_error()}")
     return None
@@ -252,15 +298,11 @@ def close_position(ticket):
             "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
             "price": tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask,
             "magic": MAGIC, "comment": "octane-close",
-            "type_time": mt5.ORDER_TIME_GTC}
-    last = None
-    for filling in filling_candidates(pos.symbol):
-        req = dict(base)
-        req["type_filling"] = filling
-        result = mt5.order_send(req)
-        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-            return "closed"
-        last = result
+            "type_time": mt5.ORDER_TIME_GTC,
+            "deviation": 20}
+    result, last = _try_order(base)
+    if result is not None:
+        return "closed"
     return f"failed: {last.comment if last is not None else mt5.last_error()}"
 
 
