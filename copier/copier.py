@@ -86,7 +86,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "1.7"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "1.8"  # bumped on each build; check the console banner to confirm the exe
 
 # failed orders are not re-attempted within this many seconds (avoids 15s spam)
 _order_failures = {}
@@ -231,6 +231,7 @@ def _attach_sl_tp(ticket, sl, tp):
     set the stop/target afterwards via position_modify."""
     pos = mt5.positions_get(ticket=ticket)
     if not pos:
+        print(f"      [sltp] position {ticket} not found")
         return False
     req = {
         "action": mt5.TRADE_ACTION_SLTP,
@@ -240,7 +241,13 @@ def _attach_sl_tp(ticket, sl, tp):
         "tp": float(tp),
     }
     res = mt5.order_send(req)
-    return res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+    ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+    if ok:
+        print(f"      [sltp] SL/TP attached to {ticket}")
+    else:
+        print(f"      [sltp] attach failed: "
+              f"{res.comment if res is not None else mt5.last_error()}")
+    return ok
 
 
 def place_order(actual_sym, side, volume, sl, tp, comment):
@@ -450,7 +457,7 @@ def run_once(watermark):
 
     # 6) reconcile: mark positions closed when they vanish from MT5
     try:
-        open_pos = sb_select("positions?status=eq.open&select=id,account_id,ticket,pair,side,volume")
+        open_pos = sb_select("positions?status=eq.open&select=id,account_id,ticket,pair,side,volume,signal_id")
     except Exception:
         open_pos = []
     for p in open_pos:
