@@ -466,10 +466,13 @@ def close_out_signals(cfg):
     if not url or not key:
         return
     base = url.rstrip("/") + "/rest/v1"
-    # NOTE: no strategy filter — older rows may predate the strategy column,
-    # so we filter by pair-set membership instead (robust).
+    # NOTE: only close out SWING signals (strategy='smc'). Embedded scalp
+    # signals (strategy='scalp') are closed out by the COPIER using MT5's
+    # realized profit — the copier is the authority there. Without this filter
+    # the scanner marks scalp signals hit_tp/hit_sl from Yahoo data and
+    # corrupts the dashboard outcomes.
     req = urllib.request.Request(
-        f"{base}/signals?status=eq.open&select=id,pair,side,tp,sl,created_at",
+        f"{base}/signals?status=eq.open&strategy=eq.smc&select=id,pair,side,tp,sl,created_at",
         headers={"apikey": key, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
