@@ -87,7 +87,7 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "3.2"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "3.3"  # bumped on each build; check the console banner to confirm the exe
 
 _embedded_heartbeat = 0.0  # throttle for the "scanning" log line
 # When True, the copier generates scalp signals itself from MT5's own candles
@@ -550,29 +550,64 @@ def push_embedded_signal(s):
         return None
 
 
-def _position_profit(ticket, symbol=None):
-    """Realized P&L of a (now closed) position, from MT5 history. Returns
-    float, or None if undetermined."""
+def _closed_position(ticket, symbol):
+    """Return (profit, close_price) for a now-closed position, from MT5 history.
+    (None, None) if nothing found. Robust against order-ticket vs position-id
+    mismatch (hedging accounts often differ)."""
     if not MT5_AVAILABLE:
-        return None
-    try:
-        if ticket:
+        return None, None
+    deals = None
+    if ticket:
+        # ticket may be an ORDER id or POSITION id — try both fields.
+        try:
             deals = mt5.history_deals_get(position=int(ticket))
-            if deals is not None and len(deals) > 0:
-                return float(sum(d.profit for d in deals))
-    except Exception:
-        pass
+        except Exception:
+            deals = None
+        if not deals:
+            try:
+                recent = mt5.history_deals_get(
+                    date_from=int(time.time()) - 3 * 86400,
+                    date_to=int(time.time())) or []
+                deals = [d for d in recent
+                         if getattr(d, "position_id", 0) == int(ticket)
+                         or getattr(d, "order", 0) == int(ticket)]
+            except Exception:
+                deals = None
+    if not deals:
+        try:
+            recent = mt5.history_deals_get(
+                date_from=int(time.time()) - 3 * 86400,
+                date_to=int(time.time())) or []
+            deals = [d for d in recent
+                     if d.magic == MAGIC and (symbol is None or d.symbol == symbol)]
+        except Exception:
+            deals = None
+    if not deals:
+        return None, None
     try:
-        deals = mt5.history_deals_get(date_from=int(time.time()) - 86400,
-                                      date_to=int(time.time())) or []
-        cands = [d for d in deals
-                 if d.magic == MAGIC and (symbol is None or d.symbol == symbol)]
-        if cands:
-            cands.sort(key=lambda d: d.time)
-            return float(sum(d.profit for d in cands))
+        profit = float(sum(d.profit for d in deals))
     except Exception:
-        pass
-    return None
+        profit = 0.0
+    try:
+        close_price = float(deals[-1].price)
+    except Exception:
+        close_price = None
+    return profit, close_price
+
+
+def _outcome_from(side, sl, tp, close_price):
+    """Determine hit_tp / hit_sl / closed_manual from close price vs stops."""
+    if side == "LONG":
+        if tp and close_price >= tp:
+            return "hit_tp"
+        if sl and close_price <= sl:
+            return "hit_sl"
+    else:
+        if tp and close_price <= tp:
+            return "hit_tp"
+        if sl and close_price >= sl:
+            return "hit_sl"
+    return "closed_manual"
 
 
 def force_test_trade(asset="EURUSD", side="LONG"):
@@ -977,28 +1012,34 @@ def run_once(watermark):
             live = [x for x in allpos
                     if x.magic == MAGIC and (actual_sym is None or x.symbol == actual_sym)]
         if not live:
-            # position gone -> closed. Use REALIZED profit from MT5 history to
-            # decide win/loss (more accurate than TP/SL inference), and sync the
-            # linked signal so the dashboard + Telegram fire correctly.
-            profit = _position_profit(p["ticket"], symbol_map.get(p["pair"]))
-            if profit is None:
-                outcome = "closed_manual"
-            elif profit > 0:
-                outcome = "closed_win"
+            # position gone -> closed. Use REALIZED profit (with close-price
+            # fallback) to decide the outcome, and ALWAYS sync the linked
+            # signal so the dashboard never shows "open" for a closed trade.
+            profit, close_price = _closed_position(p["ticket"], symbol_map.get(p["pair"]))
+            try:
+                sl = float(p.get("sl") or 0)
+                tp = float(p.get("tp") or 0)
+            except (TypeError, ValueError):
+                sl = tp = 0.0
+            if profit is not None:
+                outcome = "closed_win" if profit > 0 else "closed_loss"
+            elif close_price is not None:
+                hit = _outcome_from(p.get("side"), sl, tp, close_price)
+                outcome = {"hit_tp": "closed_win", "hit_sl": "closed_loss"}.get(hit, "closed_manual")
             else:
-                outcome = "closed_loss"
+                outcome = "closed_manual"
+            # ALWAYS move the signal out of "open" (never leave it dangling).
             if p.get("signal_id"):
-                st = {"closed_win": "hit_tp", "closed_loss": "hit_sl"}.get(outcome)
-                if st:
-                    try:
-                        sb_update(f"signals?id=eq.{p['signal_id']}", {"status": st})
-                    except Exception:
-                        pass
+                st = {"closed_win": "hit_tp", "closed_loss": "hit_sl"}.get(outcome, "expired")
+                try:
+                    sb_update(f"signals?id=eq.{p['signal_id']}", {"status": st})
+                except Exception:
+                    pass
             sb_update(f"positions?id=eq.{p['id']}",
                       {"status": outcome,
                        "closed_at": dt.datetime.now(dt.timezone.utc).isoformat()})
             print(f"   [reconcile] position {p['ticket']} -> {outcome} "
-                  f"(profit {profit})")
+                  f"(profit {profit}, close {close_price})")
         else:
             # still open: refresh profit info (optional)
             pos = live[0]

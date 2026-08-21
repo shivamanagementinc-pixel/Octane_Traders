@@ -93,12 +93,13 @@ async function sendTelegram(text: string): Promise<boolean> {
   }
 }
 
-async function recentAlert(pair: string, side: string, excludeId: unknown): Promise<boolean> {
+async function recentAlert(pair: string, side: string, strategy: string, excludeId: unknown): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SR_KEY) return false;
   const since = new Date(Date.now() - COOLDOWN_MIN * 60000).toISOString();
   const q =
     `${SUPABASE_URL}/rest/v1/signals?pair=eq.${encodeURIComponent(pair)}` +
-    `&side=eq.${encodeURIComponent(side)}&created_at=gte.${encodeURIComponent(since)}` +
+    `&side=eq.${encodeURIComponent(side)}&strategy=eq.${encodeURIComponent(strategy)}` +
+    `&created_at=gte.${encodeURIComponent(since)}` +
     `&id=neq.${excludeId}&limit=1&select=id`;
   try {
     const r = await fetch(q, {
@@ -148,10 +149,12 @@ Deno.serve(async (req) => {
   let text: string | null = null;
 
   if (type === "INSERT") {
-    // New signal — alert instantly (with a same-pair cooldown to avoid spam).
+    // New signal — alert instantly (with a same-pair+side+strategy cooldown to
+    // avoid spam; swing and scalp never suppress each other).
     const recent = await recentAlert(
       (rec.pair as string) ?? "",
       (rec.side as string) ?? "",
+      (rec.strategy as string) ?? "smc",
       rec.id,
     );
     if (!recent) text = signalText(rec);
