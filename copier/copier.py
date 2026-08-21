@@ -87,9 +87,9 @@ def _cfg(key):
 SUPABASE_URL = _cfg("SUPABASE_URL")
 SUPABASE_KEY = _cfg("SUPABASE_SERVICE_ROLE_KEY")
 
-VERSION = "3.0"  # bumped on each build; check the console banner to confirm the exe
+VERSION = "3.2"  # bumped on each build; check the console banner to confirm the exe
 
-# ---- Option A: broker-native embedded scalp engine -------------------------
+_embedded_heartbeat = 0.0  # throttle for the "scanning" log line
 # When True, the copier generates scalp signals itself from MT5's own candles
 # (no Yahoo, no futures-vs-CFD mismatch, ~15s latency) and places them as
 # market orders. Swing signals still come from Supabase (Option D: pending).
@@ -460,7 +460,8 @@ def place_pending_order(actual_sym, side, entry_price, volume, sl, tp, comment):
     bare["type_time"] = mt5.ORDER_TIME_GTC
     result2 = mt5.order_send(bare)
     if result2 is not None and result2.retcode == mt5.TRADE_RETCODE_DONE:
-        print(f"      [pending] limit placed WITHOUT SL/TP (will attach on fill)")
+        print(f"      [pending] broker rejects SL/TP on pending -> bare limit placed; "
+              f"SL/TP will attach automatically the moment it fills (no risk while pending)")
         return {"ok": True, "order": result2.order, "needs_sltp_after_fill": True}
 
     msg = result2.comment if result2 is not None else (result.comment if result is not None else mt5.last_error())
@@ -572,6 +573,35 @@ def _position_profit(ticket, symbol=None):
     except Exception:
         pass
     return None
+
+
+def force_test_trade(asset="EURUSD", side="LONG"):
+    """Place one tiny, clearly-marked order (0.01 lot) to verify the FULL
+    execution path — regardless of whether a real setup exists right now.
+    Returns True on success."""
+    if not MT5_AVAILABLE:
+        print("   [test-trade] MetaTrader5 not available")
+        return False
+    sym = SYMBOL_MAP.get(asset)
+    if not sym:
+        print(f"   [test-trade] no symbol mapping for {asset}")
+        return False
+    mt5.symbol_select(sym, True)
+    tick = mt5.symbol_info_tick(sym)
+    if tick is None:
+        print(f"   [test-trade] no tick for {sym}")
+        return False
+    price = tick.ask if side == "LONG" else tick.bid
+    pip = 0.01 if "JPY" in asset else (1.0 if asset in ("SPX500", "NAS100", "US30") else 0.0001)
+    sl = price - 20 * pip if side == "LONG" else price + 20 * pip
+    tp = price + 20 * pip if side == "LONG" else price - 20 * pip
+    print(f"   [test-trade] placing 0.01 {sym} {side} @ {price:.5f} SL {sl:.5f} TP {tp:.5f}")
+    res = place_order(sym, side, 0.01, sl, tp, "octane TEST")
+    if res is None:
+        print("   [test-trade] order FAILED")
+        return False
+    print(f"   [test-trade] SUCCESS -> ticket {res.order}")
+    return True
 
 
 def run_once(watermark):
@@ -715,10 +745,12 @@ def run_once(watermark):
             if time.time() - _order_failures.get(fail_key, 0) < RETRY_AFTER:
                 mt5.shutdown()
                 continue
-            # dedup: never stack a second order if we already hold a pending
-            # order (or open position) on this symbol.
-            if _existing_pending(sym):
-                print(f"      [dup] pending order already open for {sym} — skipping")
+            # dedup: ONE position/order per symbol per account, across BOTH
+            # engines. Skip if we already hold an open position (e.g. the
+            # embedded scalp took this symbol) OR a pending order (previous
+            # swing). This prevents the "market + pending" double trade.
+            if _any_open(sym):
+                print(f"      [dup] already holding {sym} (position or order) — skipping")
                 _order_failures[fail_key] = time.time()
                 mt5.shutdown()
                 continue
@@ -774,6 +806,11 @@ def run_once(watermark):
             except Exception as e:
                 print(f"   [embedded] compute failed: {e}")
                 scalp_sigs = []
+            if not scalp_sigs:
+                global _embedded_heartbeat
+                if time.time() - _embedded_heartbeat >= HEARTBEAT_SECS:
+                    print(f"   [embedded] scanned 8 symbols — no scalp setup right now")
+                    _embedded_heartbeat = time.time()
             for s in scalp_sigs:
                 key = (acc["id"], s["asset"], s["side"])
                 if time.time() - _scalp_last.get(key, 0) < SCALP_COOLDOWN_MIN * 60:
@@ -981,6 +1018,9 @@ def main():
     ap.add_argument("--interval", type=int, default=15)
     ap.add_argument("--ignore-hours", action="store_true",
                     help="place orders even outside trading hours (for testing)")
+    ap.add_argument("--test-trade", nargs="?", const="EURUSD", default=None,
+                    help="place ONE tiny test order (default EURUSD LONG) and exit, "
+                         "to verify execution end-to-end")
     args = ap.parse_args()
     IGNORE_HOURS = args.ignore_hours
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -989,6 +1029,13 @@ def main():
     if not MT5_AVAILABLE:
         print("MetaTrader5 package missing: pip install MetaTrader5")
         sys.exit(1)
+    if args.test_trade:
+        print(f"Octane Traders copier v{VERSION} — test-trade mode")
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            print("   [test-trade] Supabase creds missing — placing order only "
+                  "(no recording). Set SUPABASE_URL/KEY to record.")
+        ok = force_test_trade(args.test_trade.upper())
+        sys.exit(0 if ok else 1)
     # start watermark at now-2h so we don't replay ancient signals
     watermark = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
     print(f"Octane Traders copier v{VERSION} started.")
